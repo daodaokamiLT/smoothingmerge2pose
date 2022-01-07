@@ -43,7 +43,8 @@ namespace svv_fusion{
                 return false;
             }
 
-            bool push_front(){
+            bool push_front(T& data){
+                dmtx_.lock();
                 if(full()){
                     return false;
                 }
@@ -52,10 +53,13 @@ namespace svv_fusion{
                     if(start_ == -1){
                         start_ = capacity_ - 1;
                     }
+                    datas_[start_] = data;
                 }
+                dmtx_.unlock();
             }
 
-            void push_front_focus(){
+            void push_front_focus(T& data){
+                dmtx_.lock();
                 if(full()){
                     --end_;
                     --start_;
@@ -65,25 +69,32 @@ namespace svv_fusion{
                     if(start_ == -1){
                         start_ = capacity_ - 1;
                     }
+                    datas_[start_] = data;
                 }
                 else{
-                    push_front();
+                    push_front(data);
                 }
+                dmtx_.unlock();
             }
 
-            bool push_back(){
+            bool push_back(T& data){
                 if(full()){
                     return false;
                 }
                 else{
+                    dmtx_.lock();
                     ++end_;
                     if(end_ == capacity_){
                         end_ = 0;
                     }
+                    datas_[end_] = data;
+                    dmtx_.unlock();
                 }
+                return true;
             }
 
-            void push_back_focus(){
+            void push_back_focus(T& data){
+                dmtx_.lock();
                 if(full()){
                     ++end_;
                     ++start_;
@@ -93,44 +104,76 @@ namespace svv_fusion{
                     if(start_ == capacity_){
                         start_ = 0;
                     }
+                    datas_[end_] = data;
                 }
                 else{
-                    push_back();
+                    push_back(data);
                 }
+                dmtx_.unlock();
             }
 
             bool pop_front(){
                 if(empty()){
                     return false;
                 }
-                ++start;
-                if(start_ == capacity_){
+                dmtx_.lock();
+
+                ++start_;
+                if (start_ == capacity_)
+                {
                     start_ = 0;
-                }   
+                }
+                dmtx_.unlock();
             }
 
             bool pop_back(){
+
                 if(empty()){
                     return false;
                 }
+                dmtx_.lock();
                 --end_;
                 if(end_ == -1){
                     end_ = capacity_-1;
                 }
+                dmtx_.unlock();
             }
 
-            bool index(int i, T& data){
+            bool index(size_t i, T& data){
+                
                 if(i < 0 || i >= size()){
+                    dmtx_.lock();
                     int index = 0;
                     index = start_+i;
                     if(start_+i >= capacity_){
                         index = start_ + i - capacity_;
                     }
                     data = datas_[index];
-                }
+                    dmtx_.unlock();
+                }                
                 else{
                     data = T();
                     return false;
+                }
+                
+            }
+    
+            T index(size_t i){
+                
+                if(i < size()){
+                    dmtx_.lock();
+                    int index = 0;
+                    index = start_+i;
+                    if(start_+i >= capacity_){
+                        index = start_ + i - capacity_;
+                    }
+                    auto& tmp = datas_[index];
+                    dmtx_.unlock();
+                    return tmp;
+                    
+                }
+                else{
+                    return T();
                 }
             }
     };

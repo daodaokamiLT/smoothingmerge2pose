@@ -164,6 +164,28 @@ struct Posed_t{
   double timestamp;
   double q_var;
   double t_var;
+
+  Posed_t(){
+    q_wc = Quaterniond::Identity();
+    t_wc = Vec3d::Constant(std::nan(""));
+    q_var = std::numeric_limits<double>::max();
+    t_var = std::numeric_limits<double>::max();
+  }
+
+  Posed_t(Quaterniond& q, Vec3d t){
+    q_wc = q;
+    t_wc = t;
+    q_var = std::numeric_limits<double>::max();
+    t_var = std::numeric_limits<double>::max();
+  }
+
+  Posed_t(Quaterniond& q, Vec3d t, double qv, double tv){
+    q_wc = q;
+    t_wc = t;
+    q_var = qv;
+    t_var = tv;
+  }
+
 };
 
 struct Posef_t{
