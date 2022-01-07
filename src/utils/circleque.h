@@ -12,6 +12,7 @@ namespace svv_fusion{
             std::vector<T> datas_;
             std::atomic_int start_;
             std::atomic_int end_;
+            T tmp_ = T();
         public:
             CircleQue(const int sz = 100):capacity_(sz){
                 datas_.resize(capacity_);
@@ -27,6 +28,10 @@ namespace svv_fusion{
                     return end_ - start_ + 1;
                 else
                     return end_ + capacity_ - start_ + 1;
+            }
+            
+            int capacity(){
+                return capacity_;
             }
             bool empty(){
                 if(start_.load() == end_.load()){
@@ -116,14 +121,15 @@ namespace svv_fusion{
                 if(empty()){
                     return false;
                 }
-                dmtx_.lock();
 
+                dmtx_.lock();
                 ++start_;
                 if (start_ == capacity_)
                 {
                     start_ = 0;
                 }
                 dmtx_.unlock();
+                return true;
             }
 
             bool pop_back(){
@@ -152,13 +158,13 @@ namespace svv_fusion{
                     dmtx_.unlock();
                 }                
                 else{
-                    data = T();
+                    data = tmp_;
                     return false;
                 }
                 
             }
     
-            T index(size_t i){
+            T& index(size_t i){
                 
                 if(i < size()){
                     dmtx_.lock();
@@ -170,11 +176,24 @@ namespace svv_fusion{
                     auto& tmp = datas_[index];
                     dmtx_.unlock();
                     return tmp;
-                    
                 }
                 else{
-                    return T();
+                    return tmp_;
                 }
+            }
+
+            T& front(){
+                if(empty()){
+                    return tmp_;
+                }
+                return datas_[start_];
+            }
+
+            T& tail(){
+                if(empty()){
+                    return tmp_;
+                }
+                return datas_[end_];
             }
     };
 }

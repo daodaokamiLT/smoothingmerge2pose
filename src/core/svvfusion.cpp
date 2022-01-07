@@ -1,10 +1,10 @@
 #include "svvfusion.h"
-
+#include <iostream>
 namespace svv_fusion{
     VIOVPSFusion::VIOVPSFusion(const int& vioquesize, const int& vpsquesize, 
                     const int& matchsize):min_opt_size_(matchsize/2), 
                     vio_poses_(vioquesize), vps_poses_(vpsquesize), 
-                    matches_(matchsize){
+                    viovps_matches_(matchsize){
         initialized_.store(false);
         opt_thread_ = std::thread(&VIOVPSFusion::RunOptical, this);
     }
@@ -12,30 +12,73 @@ namespace svv_fusion{
     VIOVPSFusion::~VIOVPSFusion(){
         opt_thread_.detach();
     }
-
+    // 可能出现两次一样的match同时push 进入队列中！！！
     void VIOVPSFusion::PushVIOPose(Posed_t &pose) {
+        bool moveflag = false;
+        if(vio_poses_.full()){
+            moveflag = true;
+        }
         vio_poses_.push_back_focus(pose);        
+        if(moveflag){
+            MatchesFirstD1();
+        }
         // todo if has new matches in this que...
-        
-        newvps_match_.store(true);
+        int start_index = 0;
+        double time = pose.timestamp;
+        if(!viovps_matches_.empty()){
+            start_index = viovps_matches_.index(viovps_matches_.size()-1).second;   
+            ++start_index;
+        }
+        int index = findTimeStampInVPS(start_index, time);
+        if(index >= 0){
+            newvps_match_.store(true);
+            std::pair<size_t, size_t> match = std::make_pair(vio_poses_.size()-1, index);
+            mlocker_.lock();
+            if(match.first != viovps_matches_.tail().first){
+                viovps_matches_.push_back_focus(match);
+            }
+            mlocker_.unlock();
+        }
     }
     void VIOVPSFusion::PushVPSPose(Posed_t &pose) {
+        bool moveflag = false;
+        if(vps_poses_.full()){
+            moveflag = true;
+        }
         vps_poses_.push_back_focus(pose);
+        if(moveflag){
+            MatchesSecondD1();
+        }
         // todo if has new matches in this que...
-        newvps_match_.store(true);
+        int start_index = 0;
+        double time = pose.timestamp;
+        if(!viovps_matches_.empty()){
+            start_index = viovps_matches_.index(viovps_matches_.size()-1).first;   
+            ++start_index;
+        }
+        int index = findTimeStampInVIO(start_index, time);
+        if(index >= 0){
+            newvps_match_.store(true);
+            std::pair<size_t, size_t> match = std::make_pair(index, vps_poses_.size()-1);
+            mlocker_.lock();
+            if(match.first != viovps_matches_.tail().first){
+                viovps_matches_.push_back_focus(match);
+            }
+            mlocker_.unlock(); 
+        }
     }
 
     bool VIOVPSFusion::SimpleInitializeByVPSPose()
     {
         // 假定，第一次不会偏的离谱 ？？？
-        if(!matches_.empty()){
+        if(!viovps_matches_.empty()){
             initialized_.store(true);
             T_wvps_wvio_.block<3, 1>(0, 3) = Vec3d::Zero();
             T_wvps_wvio_.block<3, 3>(0, 0) = Mat3d::Identity();
 
             // @todo find the matches vps and vio
-            auto viop = vio_poses_.index(matches_.index(0).first);
-            auto vpsp = vps_poses_.index(matches_.index(0).second);
+            auto viop = vio_poses_.index(viovps_matches_.index(0).first);
+            auto vpsp = vps_poses_.index(viovps_matches_.index(0).second);
 
             T_wvps_wvio_.block<3,3>(0,0) = vpsp.q_wc.toRotationMatrix() * viop.q_wc.toRotationMatrix().transpose();
             T_wvps_wvio_.block<3,1>(0,3) = vpsp.q_wc.toRotationMatrix() * (-viop.q_wc.toRotationMatrix().transpose() * viop.t_wc) + vpsp.t_wc;
@@ -55,7 +98,7 @@ namespace svv_fusion{
         std::vector<Posed_t> temp_vps_poses;
         {
             mlocker_.lock();
-            int ms = matches_.size();
+            int ms = viovps_matches_.size();
             if (ms < min_opt_size_)
             {
                 return false;
@@ -65,9 +108,10 @@ namespace svv_fusion{
             // @todo 选择尽量远的几个pose 来做ICP
             for (int i = 0; i < ms; ++i)
             {
-                temp_vio_poses[i] = vio_poses_.index(matches_.index(i).first);
-                temp_vps_poses[i] = vps_poses_.index(matches_.index(i).second);
+                temp_vio_poses[i] = vio_poses_.index(viovps_matches_.index(i).first);
+                temp_vps_poses[i] = vps_poses_.index(viovps_matches_.index(i).second);
             }
+            mlocker_.unlock();
         }
 
         int real_size =temp_vio_poses.size(); 
@@ -162,10 +206,7 @@ namespace svv_fusion{
         Mat3d V = svd.matrixV();
 
         T_wvps_wvio_.block<3,3>(0,0) = (U * V.transpose()).transpose();
-        // R_vio_vps_ = 
-        // t_vio_vps_
         T_wvps_wvio_.block<3,1>(0,3) = vio_center - T_wvps_wvio_.block<3,3>(0,0).transpose() * vps_center;
-
         std::cout<<"T_vps_vio\n "<<T_wvps_wvio_<<std::endl;
         
         initialized_.store(true);
@@ -178,20 +219,79 @@ namespace svv_fusion{
     }
 
     void VIOVPSFusion::RunOptical() {
+        CircleQue<Posed_t> tmp_vioposes(viovps_matches_.capacity());
+        CircleQue<Posed_t> tmp_vpsposes(viovps_matches_.capacity());
         while(true){
             if(newvps_match_.load()){
                 newvps_match_.store(false);
+                mlocker_.lock();
+                std::pair<size_t, size_t> pair = viovps_matches_.tail();
+                tmp_vioposes.push_back_focus(vio_poses_.index(pair.first));
+                tmp_vpsposes.push_back_focus(vps_poses_.index(pair.second));
+                mlocker_.unlock();
+
+                Optical();
+            }
+            else{
 
             }
-            Optical();
         }
     }
 
+    // CircleQue<Posed_t>& vioposes, CircleQue<Posed_t>& vpsposes, 
     void VIOVPSFusion::Optical(){
-
+        
     }   
 
     void VIOVPSFusion::GetWVPS_VIOPose() {
 
+    }
+
+
+    int VIOVPSFusion::findTimeStampInVPS(int start_index, double timestamp){
+        if(start_index>=0 && start_index < vps_poses_.size()){
+            for(size_t i=start_index; i<vps_poses_.size(); ++i){
+                if(vps_poses_.index(i).timestamp == timestamp){
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+    int VIOVPSFusion::findTimeStampInVIO(int start_index, double timestamp){
+        if(start_index>=0 && start_index < vio_poses_.size()){
+            for(size_t i=start_index; i<vio_poses_.size(); ++i){
+                if(vio_poses_.index(i).timestamp == timestamp)
+                    return i;
+            }
+        }
+        return -1;
+    }
+
+    void VIOVPSFusion::MatchesFirstD1(){
+        mlocker_.lock();
+        int start = 0;
+        if (viovps_matches_.index(start).first == 0)
+        {
+            viovps_matches_.pop_front();
+            start = 1;
+        }
+        for (int i = start; i < viovps_matches_.size(); ++i)
+        {
+            viovps_matches_.index(i).first -= 1;
+        }
+        mlocker_.unlock();
+    }
+    void VIOVPSFusion::MatchesSecondD1(){
+        mlocker_.lock();
+        int start = 0;
+        if(viovps_matches_.index(start).second == 0){
+            viovps_matches_.pop_front();
+            start = 1;
+        }
+        for(int i=start; i<viovps_matches_.size(); ++i){
+            viovps_matches_.index(i).second -= 1;
+        }
+        mlocker_.unlock();
     }
 }

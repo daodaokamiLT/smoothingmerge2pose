@@ -11,13 +11,20 @@ namespace svv_fusion{
             int min_opt_size_;
             CircleQue<Posed_t> vio_poses_;
             CircleQue<Posed_t> vps_poses_;
+
+            int findTimeStampInVPS(int start_index, double timestamp);
+            int findTimeStampInVIO(int start_index, double timestamp);
             std::atomic_bool newvps_match_;
+
+            void MatchesFirstD1();
+            void MatchesSecondD1();
             Vec3d t_wvps_vio_;
             Quaterniond wvps_vio_;
             // for coordinate change !!!
             Mat4d T_wvps_wvio_;
             std::mutex mlocker_;
-            CircleQue<std::pair<size_t, size_t>> matches_;
+            
+            CircleQue<std::pair<size_t, size_t>> viovps_matches_;
             std::thread opt_thread_;
             std::atomic_bool initialized_;
         public:
