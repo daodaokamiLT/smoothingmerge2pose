@@ -1,5 +1,6 @@
 #include "svvfusion.h"
-#include <iostream>
+#include <ceres/ceres.h>
+
 namespace svv_fusion{
     VIOVPSFusion::VIOVPSFusion(const int& vioquesize, const int& vpsquesize, 
                     const int& matchsize):min_opt_size_(matchsize/2), 
@@ -247,7 +248,20 @@ namespace svv_fusion{
     void VIOVPSFusion::Optical(CircleQue<Posed_t>& vioposes, CircleQue<Posed_t>& vpsposes, 
                                Posed_t& last_pose, Posed_t& cur_pose){
         // a another element should also be opti ed !!! T_wvps_wvio
+        // the last_pose always the tail()-1, cur_pose is the tail pose
+        // 优化的变量实际是 delta_pose
+        ceres::Problem problem;
+        ceres::Solver::Options options;
+        options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+        options.max_num_iterations = 5;
+        ceres::Solver::Summary summary;
+        ceres::LossFunction *loss_function;
+        loss_function = new ceres::HuberLoss(1.0);
+        ceres::LocalParameterization* local_parameteriztion = new ceres::QuaternionParameterization();
+        // fix front 4/5 opt the tail 1/5 pose
+        // always change the T_wvps_wvio
 
+        
     }   
 
     void VIOVPSFusion::GetWVPS_VIOPose(Posed_t& pose) {
