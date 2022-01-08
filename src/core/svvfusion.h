@@ -18,12 +18,14 @@ namespace svv_fusion{
 
             void MatchesFirstD1();
             void MatchesSecondD1();
+            double last_timestamp_, cur_timestamp_;
             Vec3d t_wvps_vio_;
-            Quaterniond wvps_vio_;
+            Vec3d t_wvps_vio_last_;
+            Quaterniond q_wvps_vio_;
+            Quaterniond q_wvps_vio_last_;
             // for coordinate change !!!
             Mat4d T_wvps_wvio_;
             std::mutex mlocker_;
-            
             CircleQue<std::pair<size_t, size_t>> viovps_matches_;
             std::thread opt_thread_;
             std::atomic_bool initialized_;
@@ -44,8 +46,9 @@ namespace svv_fusion{
             bool RansacInitializePose();
 
             void RunOptical();
-            void Optical();
-            void GetWVPS_VIOPose();
+            void Optical(CircleQue<Posed_t>& vioposes, CircleQue<Posed_t>& vpsposes, 
+                               Posed_t& last_pose, Posed_t& cur_pose);
+            void GetWVPS_VIOPose(Posed_t& pose);
 
             bool IsInitialization(){
                 return initialized_.load();

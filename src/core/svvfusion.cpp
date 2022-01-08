@@ -229,8 +229,14 @@ namespace svv_fusion{
                 tmp_vioposes.push_back_focus(vio_poses_.index(pair.first));
                 tmp_vpsposes.push_back_focus(vps_poses_.index(pair.second));
                 mlocker_.unlock();
+                Posed_t last_wvps_viopose, wvps_viopose;
+                last_wvps_viopose.t_wc;
+                last_wvps_viopose.q_wc;
 
-                Optical();
+                wvps_viopose.t_wc;
+                wvps_viopose.q_wc;
+                // T_wvps_wvio  should also be opticated
+                Optical(tmp_vioposes, tmp_vpsposes, last_wvps_viopose, wvps_viopose);
             }
             else{
 
@@ -238,13 +244,16 @@ namespace svv_fusion{
         }
     }
 
-    // CircleQue<Posed_t>& vioposes, CircleQue<Posed_t>& vpsposes, 
-    void VIOVPSFusion::Optical(){
-        
+    void VIOVPSFusion::Optical(CircleQue<Posed_t>& vioposes, CircleQue<Posed_t>& vpsposes, 
+                               Posed_t& last_pose, Posed_t& cur_pose){
+        // a another element should also be opti ed !!! T_wvps_wvio
+
     }   
 
-    void VIOVPSFusion::GetWVPS_VIOPose() {
-
+    void VIOVPSFusion::GetWVPS_VIOPose(Posed_t& pose) {
+        pose.timestamp = cur_timestamp_;
+        pose.t_wc = t_wvps_vio_;
+        pose.q_wc = q_wvps_vio_;
     }
 
 
