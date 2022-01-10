@@ -185,8 +185,15 @@ struct Posed_t{
     q_var = qv;
     t_var = tv;
   }
-
 };
+
+void inline deltaPosed(const Posed_t& p1, const Posed_t& p0, Posed_t& p10){
+  p10.q_wc = p1.q_wc.toRotationMatrix().transpose() * p0.q_wc.toRotationMatrix();
+  p10.t_wc = p1.q_wc.toRotationMatrix().transpose() * (p0.t_wc - p1.t_wc);
+  p10.q_var = p1.q_var;
+  p10.t_var = p1.t_var;
+}
+
 
 struct Posef_t{
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW

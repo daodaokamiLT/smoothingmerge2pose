@@ -257,11 +257,75 @@ namespace svv_fusion{
         ceres::Solver::Summary summary;
         ceres::LossFunction *loss_function;
         loss_function = new ceres::HuberLoss(1.0);
-        ceres::LocalParameterization* local_parameteriztion = new ceres::QuaternionParameterization();
+        ceres::LocalParameterization* local_parameteriztion = new ceres::EigenQuaternionParameterization();
         // fix front 4/5 opt the tail 1/5 pose
         // always change the T_wvps_wvio
-
         
+        int deppart = min_opt_size_*4.0/5.0;
+        if(vioposes.size() < deppart){
+            // when pose not enough ... 
+            return;
+        }
+        
+        for(int i=0; i<deppart; ++i){
+            auto& viop = vioposes.index(i);
+            auto& vpsp = vioposes.index(i);
+            if(!viop.t_wc.hasNaN() && !vpsp.t_wc.hasNaN()){
+                problem.AddParameterBlock(viop.q_wc.coeffs().data(), 4, local_parameteriztion);
+                problem.AddParameterBlock(viop.t_wc.data(), 3);
+
+                problem.SetParameterBlockConstant(viop.q_wc.coeffs().data());
+                problem.SetParameterBlockConstant(viop.t_wc.data());
+                
+                // vps result 是可以优化一下的！！！
+                problem.AddParameterBlock(vpsp.q_wc.coeffs().data(), 4, local_parameteriztion);
+                problem.AddParameterBlock(vpsp.t_wc.data(), 3);
+            }
+            else{
+                printf("error before depart data error...\n");
+                return;
+            }
+        }
+        for(int i=deppart; i<vioposes.size(); ++i){
+            auto& viop = vioposes.index(i);
+            auto& vpsp = vpsposes.index(i);
+
+            if(!viop.t_wc.hasNaN() && !vpsp.t_wc.hasNaN()){
+                problem.AddParameterBlock(viop.q_wc.coeffs().data(), 4, local_parameteriztion);
+                problem.AddParameterBlock(viop.t_wc.data(), 3);
+
+                problem.AddParameterBlock(vpsp.q_wc.coeffs().data(), 4, local_parameteriztion);
+                problem.AddParameterBlock(vpsp.t_wc.data(), 3);
+            }
+            else{
+                printf("error after depart data error...\n");
+                return;
+            }
+        }
+
+        auto &viop0 = vioposes.index(0);
+        auto &vpsp0 = vpsposes.index(0);
+        for(int i=1; i<vioposes.size(); ++i){
+            auto& viop1 = vioposes.index(i);
+            auto& vpsp1 = vpsposes.index(i);
+
+            Posed_t deltaviop10;
+            Posed_t deltavpsp10;
+            Posed_t deltaviovps;
+            deltaPose(viop1, viop0, deltaviop10);
+            deltaPose(vpsp1, vpsp0, deltavpsp10);
+            deltaPose(deltaviop10, deltavpsp10, deltaviovps);
+
+            ceres::CostFunction* viovps_function = RelativeRTError::Create(deltaviovps.t_wc[0], deltaviovps.t_wc[1], deltaviovps.t_wc[2],
+                                        deltaviovps.q_wc.w(), deltaviovps.q_wc.x(), deltaviovps.q_wc.y(), deltaviovps.q_wc.z());
+
+            problem.AddResidualBlock(viovps_function, NULL, viop0.q_wc.coeffs().data(), viop0.t_wc.data(), 
+                                        viop1.q_wc.coeffs().data(), viop1.t_wc.data());
+
+            
+            viop0 = viop1;
+            vpsp0 = vpsp1;
+        }
     }   
 
     void VIOVPSFusion::GetWVPS_VIOPose(Posed_t& pose) {
