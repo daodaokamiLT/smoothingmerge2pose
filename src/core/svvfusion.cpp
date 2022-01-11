@@ -1,4 +1,5 @@
 #include "svvfusion.h"
+#include "svvfactors.h"
 #include <ceres/ceres.h>
 
 namespace svv_fusion{
@@ -267,6 +268,12 @@ namespace svv_fusion{
             return;
         }
         
+        Quaterniond qvec_wvps_wvio (T_wvps_wvio_.block<3,3>(0,0));
+        Vec3d t_wvps_wvio = T_wvps_wvio_.block<3,1>(0,3);
+
+        problem.AddParameterBlock(qvec_wvps_wvio.coeffs().data(), 4, local_parameteriztion);
+        problem.AddParameterBlock(t_wvps_wvio.data(), 3);
+
         for(int i=0; i<deppart; ++i){
             auto& viop = vioposes.index(i);
             auto& vpsp = vioposes.index(i);
@@ -305,27 +312,40 @@ namespace svv_fusion{
 
         auto &viop0 = vioposes.index(0);
         auto &vpsp0 = vpsposes.index(0);
+
+        ceres::CostFunction* cviovps_function0 = RelativeCRTError::Create(vpsp0.t_wc[0], vpsp0.t_wc[1], vpsp0.t_wc[2], 
+                            vpsp0.q_wc.w(), vpsp0.q_wc.x(), vpsp0.q_wc.y(), vpsp0.q_wc.z(), 
+                            0.1, 0.01);
+
+        problem.AddResidualBlock(cviovps_function0, loss_function, t_wvps_wvio.data(), qvec_wvps_wvio.coeffs().data(), 
+                                viop0.t_wc.data(), viop0.q_wc.coeffs().data());
+
         for(int i=1; i<vioposes.size(); ++i){
             auto& viop1 = vioposes.index(i);
             auto& vpsp1 = vpsposes.index(i);
 
-            Posed_t deltaviop10;
-            Posed_t deltavpsp10;
-            Posed_t deltaviovps;
-            deltaPose(viop1, viop0, deltaviop10);
-            deltaPose(vpsp1, vpsp0, deltavpsp10);
-            deltaPose(deltaviop10, deltavpsp10, deltaviovps);
+            ceres::CostFunction* cviovps_function1 = RelativeCRTError::Create(vpsp1.t_wc[0], vpsp1.t_wc[1], vpsp1.t_wc[2], 
+                            vpsp1.q_wc.w(), vpsp1.q_wc.x(), vpsp1.q_wc.y(), vpsp1.q_wc.z(), 
+                            0.1, 0.01);
 
-            ceres::CostFunction* viovps_function = RelativeRTError::Create(deltaviovps.t_wc[0], deltaviovps.t_wc[1], deltaviovps.t_wc[2],
-                                        deltaviovps.q_wc.w(), deltaviovps.q_wc.x(), deltaviovps.q_wc.y(), deltaviovps.q_wc.z());
+            problem.AddResidualBlock(cviovps_function1, loss_function, t_wvps_wvio.data(), qvec_wvps_wvio.coeffs().data(), 
+                                viop1.t_wc.data(), viop1.q_wc.coeffs().data());
 
+            Posed_t deltavps10;
+            deltaPosed(vpsp1, vpsp0, deltavps10);
+            ceres::CostFunction* viovps_function = RelativeRTError::Create(deltavps10.t_wc[0], deltavps10.t_wc[1], deltavps10.t_wc[2],
+                                                        deltavps10.q_wc.w(), deltavps10.q_wc.x(), deltavps10.q_wc.y(), deltavps10.q_wc.z(),
+                                                        0.1, 0.01);
             problem.AddResidualBlock(viovps_function, NULL, viop0.q_wc.coeffs().data(), viop0.t_wc.data(), 
-                                        viop1.q_wc.coeffs().data(), viop1.t_wc.data());
+                                viop1.q_wc.coeffs().data(), viop1.t_wc.data());
 
-            
             viop0 = viop1;
             vpsp0 = vpsp1;
         }
+
+        T_wvps_wvio_.block<3,3>(0,0) = qvec_wvps_wvio.toRotationMatrix();
+        T_wvps_wvio_.block<3,1>(0,3) = t_wvps_wvio;
+
     }   
 
     void VIOVPSFusion::GetWVPS_VIOPose(Posed_t& pose) {
