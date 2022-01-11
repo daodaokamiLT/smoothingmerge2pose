@@ -123,41 +123,38 @@ struct RelativeCRTError{
 		  t_var(t_var), q_var(q_var) {}
 
 	template <typename T>
-	bool operator()(const T* const w_q_wi, const T* w_twi, const T* q_wi, const T* t_wi, T* residuals) const
+	bool operator()(const T* const w_qwi, const T* w_twi, const T* q_wi, const T* t_wi, T* residuals) const
 	{
-		// T t_w_ij[3];
-		// t_w_ij[0] = tj[0] - ti[0];
-		// t_w_ij[1] = tj[1] - ti[1];
-		// t_w_ij[2] = tj[2] - ti[2];
 
-		// T i_q_w[4];
-		// QuaternionInverse(w_q_i, i_q_w);
+		T wqwi[4];
+		T wtwi[3];
 
-		// T t_i_ij[3];
-		// ceres::QuaternionRotatePoint(i_q_w, t_w_ij, t_i_ij);
+		ceres::QuaternionRotatePoint(w_qwi, t_wi, wtwi);
+		wtwi[0] += w_twi[0];
+		wtwi[1] += w_twi[1];
+		wtwi[2] += w_twi[2];
 
-		// residuals[0] = (t_i_ij[0] - T(t_x)) / T(t_var);
-		// residuals[1] = (t_i_ij[1] - T(t_y)) / T(t_var);
-		// residuals[2] = (t_i_ij[2] - T(t_z)) / T(t_var);
+		ceres::QuaternionProduct(w_qwi, q_wi, wqwi);
 
-		// T relative_q[4];
-		// relative_q[0] = T(q_w);
-		// relative_q[1] = T(q_x);
-		// relative_q[2] = T(q_y);
-		// relative_q[3] = T(q_z);
+		residuals[0] = (wtwi[0] - T(t_x)) / T(t_var);
+		residuals[1] = (wtwi[1] - T(t_y)) / T(t_var);
+		residuals[2] = (wtwi[2] - T(t_z)) / T(t_var);
 
-		// T q_i_j[4];
-		// ceres::QuaternionProduct(i_q_w, w_q_j, q_i_j);
+		T relative_q[4];
+		relative_q[0] = T(q_w);
+		relative_q[1] = T(q_x);
+		relative_q[2] = T(q_y);
+		relative_q[3] = T(q_z);
 
-		// T relative_q_inv[4];
-		// QuaternionInverse(relative_q, relative_q_inv);
+		T relative_q_inv[4];
+		QuaternionInverse(relative_q, relative_q_inv);
 
-		// T error_q[4];
-		// ceres::QuaternionProduct(relative_q_inv, q_i_j, error_q); 
+		T error_q[4];
+		ceres::QuaternionProduct(relative_q_inv, wqwi, error_q); 
 
-		// residuals[3] = T(2) * error_q[1] / T(q_var);
-		// residuals[4] = T(2) * error_q[2] / T(q_var);
-		// residuals[5] = T(2) * error_q[3] / T(q_var);
+		residuals[3] = T(2) * error_q[1] / T(q_var);
+		residuals[4] = T(2) * error_q[2] / T(q_var);
+		residuals[5] = T(2) * error_q[3] / T(q_var);
 
 		return true;
 	}
