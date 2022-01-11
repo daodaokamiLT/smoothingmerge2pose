@@ -331,10 +331,10 @@ namespace svv_fusion{
             problem.AddResidualBlock(cviovps_function1, loss_function, t_wvps_wvio.data(), qvec_wvps_wvio.coeffs().data(), 
                                 viop1.t_wc.data(), viop1.q_wc.coeffs().data());
 
-            Posed_t deltavps10;
-            deltaPosed(vpsp1, vpsp0, deltavps10);
-            ceres::CostFunction* viovps_function = RelativeRTError::Create(deltavps10.t_wc[0], deltavps10.t_wc[1], deltavps10.t_wc[2],
-                                                        deltavps10.q_wc.w(), deltavps10.q_wc.x(), deltavps10.q_wc.y(), deltavps10.q_wc.z(),
+            Posed_t deltavps01;
+            deltaPosed(vpsp0, vpsp1, deltavps01);
+            ceres::CostFunction* viovps_function = RelativeRTError::Create(deltavps01.t_wc[0], deltavps01.t_wc[1], deltavps01.t_wc[2],
+                                                        deltavps01.q_wc.w(), deltavps01.q_wc.x(), deltavps01.q_wc.y(), deltavps01.q_wc.z(),
                                                         0.1, 0.01);
             problem.AddResidualBlock(viovps_function, NULL, viop0.q_wc.coeffs().data(), viop0.t_wc.data(), 
                                 viop1.q_wc.coeffs().data(), viop1.t_wc.data());
