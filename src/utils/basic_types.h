@@ -185,6 +185,17 @@ struct Posed_t{
     q_var = qv;
     t_var = tv;
   }
+  friend std::ostream& operator<<(std::ostream& os, const Posed_t& a) {
+    os <<"pose:{\n    t: "<< a.timestamp<<".\n    t_wc:" << a.t_wc.transpose()<<"\n    q_wc:"<<a.q_wc.coeffs().transpose()<<"\n}"; 
+    return os;
+  }
+
+  bool valued(){
+    if(t_wc.hasNaN() || timestamp < 0 || q_wc.coeffs().hasNaN()){
+      return false;
+    }
+    return true;
+  }
 };
 
 void inline deltaPosed(const Posed_t& p1, const Posed_t& p0, Posed_t& p10){

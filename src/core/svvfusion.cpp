@@ -33,6 +33,7 @@ namespace svv_fusion{
         }
         int index = findTimeStampInVPS(start_index, time);
         if(index >= 0){
+            printf("found matches vio find vps;\n");
             newvps_match_.store(true);
             std::pair<size_t, size_t> match = std::make_pair(vio_poses_.size()-1, index);
             mlocker_.lock();
@@ -58,8 +59,10 @@ namespace svv_fusion{
             start_index = viovps_matches_.index(viovps_matches_.size()-1).first;   
             ++start_index;
         }
+        
         int index = findTimeStampInVIO(start_index, time);
         if(index >= 0){
+            printf("found matches vps find vio;\n");
             newvps_match_.store(true);
             std::pair<size_t, size_t> match = std::make_pair(index, vps_poses_.size()-1);
             mlocker_.lock();
@@ -224,11 +227,12 @@ namespace svv_fusion{
         CircleQue<Posed_t> tmp_vioposes(viovps_matches_.capacity());
         CircleQue<Posed_t> tmp_vpsposes(viovps_matches_.capacity());
         while(true){
-            printf("run in Optical....\n");
             if(newvps_match_.load()){
+                printf("run in Optical matches size is %d....\n", viovps_matches_.size());
                 newvps_match_.store(false);
                 mlocker_.lock();
                 std::pair<size_t, size_t> pair = viovps_matches_.tail();
+                printf("pair.first second %d %d...\n", pair.first, pair.second);
                 tmp_vioposes.push_back_focus(vio_poses_.index(pair.first));
                 tmp_vpsposes.push_back_focus(vps_poses_.index(pair.second));
                 mlocker_.unlock();
@@ -242,7 +246,7 @@ namespace svv_fusion{
                 Optical(tmp_vioposes, tmp_vpsposes, last_wvps_viopose, wvps_viopose);
             }
             else{
-                std::chrono::milliseconds dura(2000);
+                std::chrono::milliseconds dura(10);
                 std::this_thread::sleep_for(dura);
             }
         }
@@ -253,6 +257,7 @@ namespace svv_fusion{
         // a another element should also be opti ed !!! T_wvps_wvio
         // the last_pose always the tail()-1, cur_pose is the tail pose
         // 优化的变量实际是 delta_pose
+        printf("real run in Optical solve the problem.\n");
         ceres::Problem problem;
         ceres::Solver::Options options;
         options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
@@ -263,12 +268,12 @@ namespace svv_fusion{
         ceres::LocalParameterization* local_parameteriztion = new ceres::EigenQuaternionParameterization();
         // fix front 4/5 opt the tail 1/5 pose
         // always change the T_wvps_wvio
-        
-        int deppart = min_opt_size_*4.0/5.0;
-        if(vioposes.size() < deppart){
+        int deppart = std::max(min_opt_size_, vioposes.size())*4.0/5.0;
+        if(vioposes.size() <= deppart){
             // when pose not enough ... 
             return;
         }
+        printf("matches size and depart position is %d %d.\n", vioposes.size(), deppart);
         
         Quaterniond qvec_wvps_wvio (T_wvps_wvio_.block<3,3>(0,0));
         Vec3d t_wvps_wvio = T_wvps_wvio_.block<3,1>(0,3);
@@ -292,13 +297,16 @@ namespace svv_fusion{
             }
             else{
                 printf("error before depart data error...\n");
+                std::cout<<i<<"viop:"<<viop<<std::endl;
+                std::cout<<i<<"vpsp:"<<vpsp<<std::endl;
+                exit(0);
                 return;
             }
         }
         for(int i=deppart; i<vioposes.size(); ++i){
             auto& viop = vioposes.index(i);
             auto& vpsp = vpsposes.index(i);
-
+    
             if(!viop.t_wc.hasNaN() && !vpsp.t_wc.hasNaN()){
                 problem.AddParameterBlock(viop.q_wc.coeffs().data(), 4, local_parameteriztion);
                 problem.AddParameterBlock(viop.t_wc.data(), 3);
@@ -308,19 +316,20 @@ namespace svv_fusion{
             }
             else{
                 printf("error after depart data error...\n");
+                std::cout<<i<<"viop:"<<viop<<std::endl;
+                std::cout<<i<<"vpsp:"<<vpsp<<std::endl;
+                exit(-1);
                 return;
             }
         }
 
         auto &viop0 = vioposes.index(0);
         auto &vpsp0 = vpsposes.index(0);
-
         ceres::CostFunction* cviovps_function0 = RelativeCRTError::Create(vpsp0.t_wc[0], vpsp0.t_wc[1], vpsp0.t_wc[2], 
                             vpsp0.q_wc.w(), vpsp0.q_wc.x(), vpsp0.q_wc.y(), vpsp0.q_wc.z(), 
                             0.1, 0.01);
-
-        problem.AddResidualBlock(cviovps_function0, loss_function, t_wvps_wvio.data(), qvec_wvps_wvio.coeffs().data(), 
-                                viop0.t_wc.data(), viop0.q_wc.coeffs().data());
+        problem.AddResidualBlock(cviovps_function0, loss_function, qvec_wvps_wvio.coeffs().data(), t_wvps_wvio.data(), 
+                                viop0.q_wc.coeffs().data(), viop0.t_wc.data());
 
         for(int i=1; i<vioposes.size(); ++i){
             auto& viop1 = vioposes.index(i);
@@ -329,9 +338,8 @@ namespace svv_fusion{
             ceres::CostFunction* cviovps_function1 = RelativeCRTError::Create(vpsp1.t_wc[0], vpsp1.t_wc[1], vpsp1.t_wc[2], 
                             vpsp1.q_wc.w(), vpsp1.q_wc.x(), vpsp1.q_wc.y(), vpsp1.q_wc.z(), 
                             0.1, 0.01);
-
-            problem.AddResidualBlock(cviovps_function1, loss_function, t_wvps_wvio.data(), qvec_wvps_wvio.coeffs().data(), 
-                                viop1.t_wc.data(), viop1.q_wc.coeffs().data());
+            problem.AddResidualBlock(cviovps_function1, loss_function, qvec_wvps_wvio.coeffs().data(), t_wvps_wvio.data(),  
+                                viop1.q_wc.coeffs().data(), viop1.t_wc.data());
 
             Posed_t deltavps01;
             deltaPosed(vpsp0, vpsp1, deltavps01);
@@ -358,7 +366,9 @@ namespace svv_fusion{
         pose.q_wc = q_wvps_vio_;
     }
     
-
+    void VIOVPSFusion::GetOptVIOPose(Posed_t& pose){
+        pose = opt_vio_poses_.tail();
+    }
     int VIOVPSFusion::findTimeStampInVPS(int start_index, double timestamp){
         if(start_index>=0 && start_index < vps_poses_.size()){
             for(size_t i=start_index; i<vps_poses_.size(); ++i){

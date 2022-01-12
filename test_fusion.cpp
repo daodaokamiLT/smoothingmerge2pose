@@ -23,8 +23,8 @@ void readposecsv(std::string filepath, std::vector<svv_fusion::Posed_t>& poses){
 
             ss >> p.timestamp;
             ss >> p.t_wc[0];
-            ss >> p.t_wc[0];
-            ss >> p.t_wc[0];
+            ss >> p.t_wc[1];
+            ss >> p.t_wc[2];
             ss >> p.q_wc.w();
             ss >> p.q_wc.x();
             ss >> p.q_wc.y();
@@ -55,7 +55,14 @@ int main(int argc, char* argv[]){
         }
         auto viot = vioposes[vioposition].timestamp;
         auto vpst = vpsposes[vpsposition].timestamp;
-        printf("the vio/vps pose: %lf, %lf...\n", viot, vpst);
+        // printf("the vio/vps pose: %lf, %lf...\n", viot, vpst);
+        // std::cout<<"push in viop: "<<vioposes[vioposition]<<std::endl;
+        // std::cout<<"push in vpsp: "<<vpsposes[vpsposition]<<std::endl;
+
+        if(!vioposes[vioposition].valued() || !vpsposes[vpsposition].valued()){
+            printf("data error...\n");
+            exit(-1);
+        }
         if(viot == vpst){
             printf("push vps vio.\n");
             vvfusion.PushVIOPose(vioposes[vioposition]);
@@ -69,11 +76,13 @@ int main(int argc, char* argv[]){
             ++vioposition;
         }
         else if(viot > vpst){
-            printf("push vps.\n");
+            printf("push vps vio.\n");
             vvfusion.PushVPSPose(vpsposes[vpsposition]);
             ++vpsposition;
         }
-        usleep(3000);
+        usleep(10000);
+        svv_fusion::Posed_t fusion;
+        vvfusion.GetWVPS_VIOPose(fusion);
     }
     return 0;
 }
