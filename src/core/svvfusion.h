@@ -24,7 +24,7 @@ namespace svv_fusion{
             Quaterniond q_wvps_vio_;
             Quaterniond q_wvps_vio_last_; 
             // for coordinate change !!!
-            Mat4d T_wvps_wvio_;
+            Mat4d T_wvps_wvio_ = Mat4d::Identity();
             std::mutex mlocker_;
             CircleQue<std::pair<size_t, size_t>> viovps_matches_;
             std::thread opt_thread_;

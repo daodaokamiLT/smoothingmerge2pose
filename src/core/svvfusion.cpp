@@ -325,21 +325,25 @@ namespace svv_fusion{
 
         auto &viop0 = vioposes.index(0);
         auto &vpsp0 = vpsposes.index(0);
-        ceres::CostFunction* cviovps_function0 = RelativeCRTError::Create(vpsp0.t_wc[0], vpsp0.t_wc[1], vpsp0.t_wc[2], 
+        ceres::CostFunction* cviovps_function0 = RelativeCRTError2::Create(vpsp0.t_wc[0], vpsp0.t_wc[1], vpsp0.t_wc[2], 
                             vpsp0.q_wc.w(), vpsp0.q_wc.x(), vpsp0.q_wc.y(), vpsp0.q_wc.z(), 
+                            0.1, 0.01,
+                            viop0.t_wc[0], viop0.t_wc[1], viop0.t_wc[2], 
+                            viop0.q_wc.w(), viop0.q_wc.x(), viop0.q_wc.y(), viop0.q_wc.z(), 
                             0.1, 0.01);
-        problem.AddResidualBlock(cviovps_function0, loss_function, qvec_wvps_wvio.coeffs().data(), t_wvps_wvio.data(), 
-                                viop0.q_wc.coeffs().data(), viop0.t_wc.data());
+        problem.AddResidualBlock(cviovps_function0, loss_function, qvec_wvps_wvio.coeffs().data(), t_wvps_wvio.data());
 
         for(int i=1; i<vioposes.size(); ++i){
             auto& viop1 = vioposes.index(i);
             auto& vpsp1 = vpsposes.index(i);
 
-            ceres::CostFunction* cviovps_function1 = RelativeCRTError::Create(vpsp1.t_wc[0], vpsp1.t_wc[1], vpsp1.t_wc[2], 
+            ceres::CostFunction* cviovps_function1 = RelativeCRTError2::Create(vpsp1.t_wc[0], vpsp1.t_wc[1], vpsp1.t_wc[2], 
                             vpsp1.q_wc.w(), vpsp1.q_wc.x(), vpsp1.q_wc.y(), vpsp1.q_wc.z(), 
+                            0.1, 0.01,
+                            viop1.t_wc[0], viop1.t_wc[1], viop1.t_wc[2], 
+                            viop1.q_wc.w(), viop1.q_wc.x(), viop1.q_wc.y(), viop1.q_wc.z(), 
                             0.1, 0.01);
-            problem.AddResidualBlock(cviovps_function1, loss_function, qvec_wvps_wvio.coeffs().data(), t_wvps_wvio.data(),  
-                                viop1.q_wc.coeffs().data(), viop1.t_wc.data());
+            problem.AddResidualBlock(cviovps_function1, loss_function, qvec_wvps_wvio.coeffs().data(), t_wvps_wvio.data());
 
             Posed_t deltavps01;
             deltaPosed(vpsp0, vpsp1, deltavps01);
