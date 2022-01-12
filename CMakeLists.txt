@@ -9,3 +9,6 @@ include_directories(${Ceres_INCLUDE_DIRS}
     "/usr/include/eigen3")
 
 add_library(svvfusion src/core/svvfusion.cpp)
+target_link_libraries(svvfusion ${CERES_LIBRARIES})
+add_executable(test_svvfusion test_fusion.cpp)
+target_link_libraries(test_svvfusion svvfusion)

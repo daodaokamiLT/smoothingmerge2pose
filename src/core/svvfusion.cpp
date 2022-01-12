@@ -6,7 +6,7 @@ namespace svv_fusion{
     VIOVPSFusion::VIOVPSFusion(const int& vioquesize, const int& vpsquesize, 
                     const int& matchsize):min_opt_size_(matchsize/2), 
                     vio_poses_(vioquesize), vps_poses_(vpsquesize), 
-                    viovps_matches_(matchsize){
+                    opt_vio_poses_(vioquesize), viovps_matches_(matchsize){
         initialized_.store(false);
         opt_thread_ = std::thread(&VIOVPSFusion::RunOptical, this);
     }
@@ -224,6 +224,7 @@ namespace svv_fusion{
         CircleQue<Posed_t> tmp_vioposes(viovps_matches_.capacity());
         CircleQue<Posed_t> tmp_vpsposes(viovps_matches_.capacity());
         while(true){
+            printf("run in Optical....\n");
             if(newvps_match_.load()){
                 newvps_match_.store(false);
                 mlocker_.lock();
@@ -241,7 +242,8 @@ namespace svv_fusion{
                 Optical(tmp_vioposes, tmp_vpsposes, last_wvps_viopose, wvps_viopose);
             }
             else{
-
+                std::chrono::milliseconds dura(2000);
+                std::this_thread::sleep_for(dura);
             }
         }
     }
@@ -342,18 +344,20 @@ namespace svv_fusion{
             viop0 = viop1;
             vpsp0 = vpsp1;
         }
-
+        ceres::Solve(options, &problem, &summary);
+        
         T_wvps_wvio_.block<3,3>(0,0) = qvec_wvps_wvio.toRotationMatrix();
         T_wvps_wvio_.block<3,1>(0,3) = t_wvps_wvio;
 
-    }   
+        opt_vio_poses_.push_back_focus(vioposes.tail());
+    }
 
     void VIOVPSFusion::GetWVPS_VIOPose(Posed_t& pose) {
         pose.timestamp = cur_timestamp_;
         pose.t_wc = t_wvps_vio_;
         pose.q_wc = q_wvps_vio_;
     }
-
+    
 
     int VIOVPSFusion::findTimeStampInVPS(int start_index, double timestamp){
         if(start_index>=0 && start_index < vps_poses_.size()){
