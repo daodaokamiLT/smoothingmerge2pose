@@ -253,10 +253,14 @@ namespace vins_fusion{
                 auto m = viovps_matches_.tail();
                 Posed_t viop = vio_poses_.index(m.first);
                 Posed_t vpsp = vps_poses_.index(m.second);
+                printf("match size %d, the match element ? ... %d %d %lf.\n",viovps_matches_.size(), 
+                                    m.first, m.second, viop.timestamp);
                 double t = viop.timestamp;
                 if(t != vpsp.timestamp){
                     
-                    printf("error, match size %d, the match element didn't matched... %d %d|| %lf %lf\n", viovps_matches_.size(), m.first, m.second, 
+                    printf("error, match size %d, the match element didn't matched... %d %d|| %lf %lf\n", 
+                                    viovps_matches_.size(), 
+                                    m.first, m.second, 
                                     t, vpsp.timestamp);
                     exit(-1);
                 }
