@@ -7,6 +7,8 @@ namespace svv_fusion{
                     const int& matchsize):min_opt_size_(matchsize/2), 
                     vio_poses_(vioquesize), vps_poses_(vpsquesize), 
                     opt_vio_poses_(vioquesize), viovps_matches_(matchsize){
+        matches_index_ = 0;
+        newvps_match_.store(false);
         initialized_.store(false);
         opt_thread_ = std::thread(&VIOVPSFusion::RunOptical, this);
     }
@@ -15,6 +17,7 @@ namespace svv_fusion{
         opt_thread_.detach();
     }
     // 可能出现两次一样的match同时push 进入队列中！！！
+       // 可能出现两次一样的match同时push 进入队列中！！！ // 这种find matches 方法太差了！！！！
     void VIOVPSFusion::PushVIOPose(Posed_t &pose) {
         bool moveflag = false;
         if(vio_poses_.full()){
@@ -25,22 +28,33 @@ namespace svv_fusion{
             MatchesFirstD1();
         }
         // todo if has new matches in this que...
-        int start_index = 0;
-        double time = pose.timestamp;
+        int viostart = 0;
+        int vpsstart = 0;
         if(!viovps_matches_.empty()){
-            start_index = viovps_matches_.index(viovps_matches_.size()-1).second;   
-            ++start_index;
+            auto m = viovps_matches_.index(matches_index_);
+            viostart = m.first+1;
+            vpsstart = m.second+1;    
         }
-        int index = findTimeStampInVPS(start_index, time);
-        if(index >= 0){
-            printf("found matches vio find vps;\n");
-            newvps_match_.store(true);
-            std::pair<size_t, size_t> match = std::make_pair(vio_poses_.size()-1, index);
-            mlocker_.lock();
-            if(match.first != viovps_matches_.tail().first){
+        while(viostart < vio_poses_.size() && vpsstart < vps_poses_.size()){
+            Posed_t& viop = vio_poses_.index(viostart);
+            Posed_t& vpsp = vps_poses_.index(vpsstart);
+            if(viop.timestamp == vpsp.timestamp){
+                if(viostart == -1){
+                    printf("error, startvio index is -1...\n");
+                    exit(-1);
+                }
+                std::pair<size_t, size_t> match = std::make_pair(viostart, vpsstart);
                 viovps_matches_.push_back_focus(match);
+                matches_index_ = viovps_matches_.size()-1;
+                newvps_match_.store(true);
+                break;
             }
-            mlocker_.unlock();
+            else if(viop.timestamp < vpsp.timestamp){
+                ++viostart;
+            }
+            else if(viop.timestamp > vpsp.timestamp){
+                ++vpsstart;
+            }
         }
     }
     void VIOVPSFusion::PushVPSPose(Posed_t &pose) {
@@ -53,23 +67,29 @@ namespace svv_fusion{
             MatchesSecondD1();
         }
         // todo if has new matches in this que...
-        int start_index = 0;
-        double time = pose.timestamp;
+        int viostart = 0;
+        int vpsstart = 0;
         if(!viovps_matches_.empty()){
-            start_index = viovps_matches_.index(viovps_matches_.size()-1).first;   
-            ++start_index;
+            auto m = viovps_matches_.index(matches_index_);
+            viostart = m.first+1;
+            vpsstart = m.second+1;       
         }
-        
-        int index = findTimeStampInVIO(start_index, time);
-        if(index >= 0){
-            printf("found matches vps find vio;\n");
-            newvps_match_.store(true);
-            std::pair<size_t, size_t> match = std::make_pair(index, vps_poses_.size()-1);
-            mlocker_.lock();
-            if(match.first != viovps_matches_.tail().first){
+        while(viostart < vio_poses_.size() && vpsstart < vps_poses_.size()){
+            Posed_t& viop = vio_poses_.index(viostart);
+            Posed_t& vpsp = vps_poses_.index(vpsstart);
+            if(viop.timestamp == vpsp.timestamp){
+                std::pair<size_t, size_t> match = std::make_pair(viostart, vpsstart);
                 viovps_matches_.push_back_focus(match);
+                matches_index_ = viovps_matches_.size()-1;
+                newvps_match_.store(true);
+                break;
             }
-            mlocker_.unlock(); 
+            else if(viop.timestamp < vpsp.timestamp){
+                ++viostart;
+            }
+            else if(viop.timestamp > vpsp.timestamp){
+                ++vpsstart;
+            }
         }
     }
 

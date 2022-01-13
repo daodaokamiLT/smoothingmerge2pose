@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <string>
 #include "src/utils/basic_types.h"
-#include "src/core/svvfusion.h"
+#include "src/vins_fusion/vinsfusion.h"
 #include <unistd.h>
 // model just support euroc
 void readposecsv(std::string filepath, std::vector<svv_fusion::Posed_t>& poses){
@@ -45,11 +45,10 @@ int main(int argc, char* argv[]){
     readposecsv("/home/lut/Desktop/evo/vio.csv", vioposes);
     readposecsv("/home/lut/Desktop/evo/vps.csv", vpsposes);
 
-    std::vector<svv_fusion::Posed_t> fusion_results;
-    svv_fusion::VIOVPSFusion vvfusion(50, 150, 50);
+    svv_fusion::AlignedVector<svv_fusion::Posed_t> fusion_results;
+    svv_fusion::vins_fusion::VIOVPSFusion2 vvfusion(50, 150, 50);
     int vioposition = 0, vpsposition = 0;
     std::ofstream foutC("/home/lut/Desktop/evo/optvinsvio.csv", std::ios::app);
-    foutC.setf(std::ios::fixed, std::ios::floatfield);
     svv_fusion::Posed_t lastoptpose;
     while(true){
         if(vioposes.size() <= vioposition || vpsposes.size() <= vpsposition){
@@ -92,7 +91,7 @@ int main(int argc, char* argv[]){
             }
             
         }
-
+        
         if(optpose.valued()){
             foutC.precision(0);
             foutC << optpose.timestamp << ",";

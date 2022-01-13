@@ -6,15 +6,17 @@ namespace vins_fusion{
     VIOVPSFusion2::VIOVPSFusion2(const int& vioquesize, const int& vpsquesize, 
                     const int& matchsize):min_opt_size_(matchsize/2), 
                     vio_poses_(vioquesize), vps_poses_(vpsquesize), 
-                    opt_vio_poses_(vioquesize), viovps_matches_(matchsize){
+                    opt_vio_poses_(vioquesize), viovps_matches_(matchsize){\
+        matches_index_ = 0;
         initialized_.store(false);
+        newvps_match_.store(false);
         opt_thread_ = std::thread(&VIOVPSFusion2::RunOptical, this);
     }
 
     VIOVPSFusion2::~VIOVPSFusion2(){
         opt_thread_.detach();
     }
-    // 可能出现两次一样的match同时push 进入队列中！！！
+    // 可能出现两次一样的match同时push 进入队列中！！！ // 这种find matches 方法太差了！！！！
     void VIOVPSFusion2::PushVIOPose(Posed_t &pose) {
         bool moveflag = false;
         if(vio_poses_.full()){
@@ -22,25 +24,38 @@ namespace vins_fusion{
         }
         vio_poses_.push_back_focus(pose);        
         if(moveflag){
+            printf("move flag....\n");
             MatchesFirstD1();
         }
         // todo if has new matches in this que...
-        int start_index = 0;
-        double time = pose.timestamp;
+        int viostart = 0;
+        int vpsstart = 0;
+        
         if(!viovps_matches_.empty()){
-            start_index = viovps_matches_.index(viovps_matches_.size()-1).second;   
-            ++start_index;
-        }
-        int index = findTimeStampInVPS(start_index, time);
-        if(index >= 0){
-            printf("found matches vio find vps;\n");
-            newvps_match_.store(true);
-            std::pair<size_t, size_t> match = std::make_pair(vio_poses_.size()-1, index);
             mlocker_.lock();
-            if(match.first != viovps_matches_.tail().first){
-                viovps_matches_.push_back_focus(match);
-            }
+            auto m = viovps_matches_.index(matches_index_);
             mlocker_.unlock();
+            viostart = m.first+1;
+            vpsstart = m.second+1;    
+        }
+        while(viostart < vio_poses_.size() && vpsstart < vps_poses_.size()){
+            Posed_t& viop = vio_poses_.index(viostart);
+            Posed_t& vpsp = vps_poses_.index(vpsstart);
+            if(viop.timestamp == vpsp.timestamp){
+                mlocker_.lock();
+                std::pair<size_t, size_t> match = std::make_pair(viostart, vpsstart);
+                viovps_matches_.push_back_focus(match);
+                matches_index_ = viovps_matches_.size()-1;
+                mlocker_.unlock();
+                newvps_match_.store(true);
+                break;
+            }
+            else if(viop.timestamp < vpsp.timestamp){
+                ++viostart;
+            }
+            else if(viop.timestamp > vpsp.timestamp){
+                ++vpsstart;
+            }
         }
     }
     void VIOVPSFusion2::PushVPSPose(Posed_t &pose) {
@@ -53,23 +68,32 @@ namespace vins_fusion{
             MatchesSecondD1();
         }
         // todo if has new matches in this que...
-        int start_index = 0;
-        double time = pose.timestamp;
+        int viostart = 0;
+        int vpsstart = 0;
         if(!viovps_matches_.empty()){
-            start_index = viovps_matches_.index(viovps_matches_.size()-1).first;   
-            ++start_index;
+            auto m = viovps_matches_.index(matches_index_);
+            viostart = m.first+1;
+            vpsstart = m.second+1;    
         }
-        
-        int index = findTimeStampInVIO(start_index, time);
-        if(index >= 0){
-            printf("found matches vps find vio;\n");
-            newvps_match_.store(true);
-            std::pair<size_t, size_t> match = std::make_pair(index, vps_poses_.size()-1);
-            mlocker_.lock();
-            if(match.first != viovps_matches_.tail().first){
+        while(viostart < vio_poses_.size() && vpsstart < vps_poses_.size()){
+            Posed_t& viop = vio_poses_.index(viostart);
+            Posed_t& vpsp = vps_poses_.index(vpsstart);
+            if(viop.timestamp == vpsp.timestamp){
+                mlocker_.lock();
+                std::pair<size_t, size_t> match = std::make_pair(viostart, vpsstart);
                 viovps_matches_.push_back_focus(match);
+                mlocker_.unlock();
+
+                matches_index_ = viovps_matches_.size()-1;
+                newvps_match_.store(true);
+                break;
             }
-            mlocker_.unlock(); 
+            else if(viop.timestamp < vpsp.timestamp){
+                ++viostart;
+            }
+            else if(viop.timestamp > vpsp.timestamp){
+                ++vpsstart;
+            }
         }
     }
 
@@ -226,11 +250,14 @@ namespace vins_fusion{
     void VIOVPSFusion2::RunOptical() {
         while(true){
             if(newvps_match_.load()){
-                Posed_t viop = vio_poses_.index(viovps_matches_.tail().first);
-                Posed_t vpsp = vps_poses_.index(viovps_matches_.tail().second);
+                auto m = viovps_matches_.tail();
+                Posed_t viop = vio_poses_.index(m.first);
+                Posed_t vpsp = vps_poses_.index(m.second);
                 double t = viop.timestamp;
                 if(t != vpsp.timestamp){
-                    printf("error, the math element didn't matched...\n");
+                    
+                    printf("error, match size %d, the match element didn't matched... %d %d|| %lf %lf\n", viovps_matches_.size(), m.first, m.second, 
+                                    t, vpsp.timestamp);
                     exit(-1);
                 }
                 vioposeMap_[t] = viop;
@@ -323,6 +350,7 @@ namespace vins_fusion{
         T_wvio_vio.block<3,3>(0,0) = itervio->second.q_wc.toRotationMatrix();
         T_wvio_vio.block<3,1>(0,3) = itervio->second.t_wc;
         T_wvps_wvio_ = T_wvps_vio * T_wvio_vio.inverse();
+        // std::cout<<"the T_wvps_wvio change method is\n"<<T_wvps_wvio_<<std::endl;
     }
 
     void VIOVPSFusion2::GetWVPS_VIOPose(Posed_t& pose) {
@@ -335,9 +363,11 @@ namespace vins_fusion{
         pose = opt_vio_poses_.tail();
     }
     int VIOVPSFusion2::findTimeStampInVPS(int start_index, double timestamp){
+
         if(start_index>=0 && start_index < vps_poses_.size()){
             for(size_t i=start_index; i<vps_poses_.size(); ++i){
                 if(vps_poses_.index(i).timestamp == timestamp){
+                    printf("vps %d time %lf...\n", i, vps_poses_.index(i).timestamp);
                     return i;
                 }
             }
@@ -347,8 +377,10 @@ namespace vins_fusion{
     int VIOVPSFusion2::findTimeStampInVIO(int start_index, double timestamp){
         if(start_index>=0 && start_index < vio_poses_.size()){
             for(size_t i=start_index; i<vio_poses_.size(); ++i){
-                if(vio_poses_.index(i).timestamp == timestamp)
+                if(vio_poses_.index(i).timestamp == timestamp){
+                    printf("vio %d time %lf--%lf...\n", i, vio_poses_.index(i).timestamp, timestamp);
                     return i;
+                }
             }
         }
         return -1;
@@ -356,27 +388,44 @@ namespace vins_fusion{
 
     void VIOVPSFusion2::MatchesFirstD1(){
         mlocker_.lock();
-        int start = 0;
-        if (viovps_matches_.index(start).first == 0)
+        if (viovps_matches_.index(0).first == 0)
         {
-            viovps_matches_.pop_front();
-            start = 1;
+            printf("D1 pop front in viovps_matches_.\n");
+            bool succ = viovps_matches_.pop_front();
+            if(!succ){
+                printf("no possible matches is zero...\n");
+                exit(-1);
+                return;
+            }
         }
-        for (int i = start; i < viovps_matches_.size(); ++i)
+        for (int i = 0; i < viovps_matches_.size(); ++i)
         {
             viovps_matches_.index(i).first -= 1;
+            if(viovps_matches_.index(i).first < 0){
+                printf("d1:%d--", viovps_matches_.index(i).first);
+                exit(-1);
+            }
         }
         mlocker_.unlock();
     }
     void VIOVPSFusion2::MatchesSecondD1(){
         mlocker_.lock();
-        int start = 0;
-        if(viovps_matches_.index(start).second == 0){
-            viovps_matches_.pop_front();
-            start = 1;
+        if(viovps_matches_.index(0).second == 0){
+            printf("D2 pop front in viovps_matches_.\n");
+            bool succ = viovps_matches_.pop_front();
+            if(!succ){
+                printf("no possible matches is zero...\n");
+                exit(-1);
+                return;
+            }
         }
-        for(int i=start; i<viovps_matches_.size(); ++i){
+        for(int i=0; i<viovps_matches_.size(); ++i){
+            
             viovps_matches_.index(i).second -= 1;
+            if(viovps_matches_.index(i).second < 0){
+                printf("d2: %d\n", viovps_matches_.index(i).second);
+                exit(-1);
+            }
         }
         mlocker_.unlock();
     }

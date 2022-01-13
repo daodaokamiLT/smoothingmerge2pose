@@ -27,6 +27,7 @@ namespace vins_fusion{
             // for coordinate change !!!
             Mat4d T_wvps_wvio_ = Mat4d::Identity();
             std::mutex mlocker_;
+            std::atomic_int matches_index_;
             CircleQue<std::pair<size_t, size_t>> viovps_matches_;
             std::thread opt_thread_;
             std::atomic_bool initialized_;
