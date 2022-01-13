@@ -246,7 +246,7 @@ struct RelativeCRTError2{
 								  t_x1, t_y1, t_z1, q_w1, q_x1, q_y1, q_z1, t_var1, q_var1)
 		));
 	}
-
+	
 	double t_x0, t_y0, t_z0, t_norm0;
 	double q_w0, q_x0, q_y0, q_z0;
 	double t_var0, q_var0;

@@ -198,6 +198,12 @@ struct Posed_t{
   }
 };
 
+
+void inline ChangeCoordinate(const Mat4d& T_w1w0, const Posed_t& pw0_i, Posed_t& pw1_i){
+  pw1_i = pw0_i;
+  pw1_i.q_wc = T_w1w0.block<3,3>(0,0) * pw0_i.q_wc;
+  pw1_i.t_wc = T_w1w0.block<3,3>(0,0) * pw0_i.t_wc + T_w1w0.block<3,1>(0,3);
+}
 void inline deltaPosed(const Posed_t& p1, const Posed_t& p0, Posed_t& p10){
   p10.q_wc = p1.q_wc.toRotationMatrix().transpose() * p0.q_wc.toRotationMatrix();
   p10.t_wc = p1.q_wc.toRotationMatrix().transpose() * (p0.t_wc - p1.t_wc);

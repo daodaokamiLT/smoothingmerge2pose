@@ -11,7 +11,7 @@ namespace svv_fusion{
         private:
             int capacity_;
             std::mutex dmtx_;
-            std::vector<T> datas_;
+            AlignedVector<T> datas_;
             std::atomic_int start_;
             std::atomic_int end_;
             T tmp_ = T();
