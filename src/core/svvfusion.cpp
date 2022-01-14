@@ -1,6 +1,7 @@
 #include "svvfusion.h"
 #include "svvfactors.h"
 #include <ceres/ceres.h>
+#include <fstream>
 
 namespace svv_fusion{
     VIOVPSFusion::VIOVPSFusion(const int& vioquesize, const int& vpsquesize, 
@@ -15,9 +16,23 @@ namespace svv_fusion{
 
     VIOVPSFusion::~VIOVPSFusion(){
         opt_thread_.detach();
+        
+        std::ofstream foutC("/home/lut/Desktop/evo/optvio.csv", std::ios::app);
+        // foutC.setf(std::ios::fixed, std::ios::floatfield);
+        //     foutC.precision(0);
+        //     foutC << optpose.timestamp << ",";
+        //     foutC.precision(5);
+        //     foutC << optpose.t_wc[0] << ","
+        //           << optpose.t_wc[1] << ","
+        //           << optpose.t_wc[2] << ","
+        //           << optpose.q_wc.w() << ","
+        //           << optpose.q_wc.x() << ","
+        //           << optpose.q_wc.y() << ","
+        //           << optpose.q_wc.z() << std::endl;
+        foutC.close();
     }
     // 可能出现两次一样的match同时push 进入队列中！！！
-       // 可能出现两次一样的match同时push 进入队列中！！！ // 这种find matches 方法太差了！！！！
+    // 可能出现两次一样的match同时push 进入队列中！！！ // 这种find matches 方法太差了！！！！
     void VIOVPSFusion::PushVIOPose(Posed_t &pose) {
         bool moveflag = false;
         if(vio_poses_.full()){
@@ -97,21 +112,24 @@ namespace svv_fusion{
     {
         // 假定，第一次不会偏的离谱 ？？？
         if(!viovps_matches_.empty()){
-            initialized_.store(true);
-            T_wvps_wvio_.block<3, 1>(0, 3) = Vec3d::Zero();
-            T_wvps_wvio_.block<3, 3>(0, 0) = Mat3d::Identity();
+            if(viovps_matches_.size() == 1){
+                initialized_.store(true);
+                T_wvps_wvio_.block<3, 1>(0, 3) = Vec3d::Zero();
+                T_wvps_wvio_.block<3, 3>(0, 0) = Mat3d::Identity();
 
-            // @todo find the matches vps and vio
-            auto viop = vio_poses_.index(viovps_matches_.index(0).first);
-            auto vpsp = vps_poses_.index(viovps_matches_.index(0).second);
+                // @todo find the matches vps and vio
+                auto viop = vio_poses_.index(viovps_matches_.index(0).first);
+                auto vpsp = vps_poses_.index(viovps_matches_.index(0).second);
 
-            T_wvps_wvio_.block<3,3>(0,0) = vpsp.q_wc.toRotationMatrix() * viop.q_wc.toRotationMatrix().transpose();
-            T_wvps_wvio_.block<3,1>(0,3) = vpsp.q_wc.toRotationMatrix() * (-viop.q_wc.toRotationMatrix().transpose() * viop.t_wc) + vpsp.t_wc;
-
+                T_wvps_wvio_.block<3, 3>(0, 0) = vpsp.q_wc.toRotationMatrix() * viop.q_wc.toRotationMatrix().transpose();
+                T_wvps_wvio_.block<3, 1>(0, 3) = vpsp.q_wc.toRotationMatrix() * (-viop.q_wc.toRotationMatrix().transpose() * viop.t_wc) + vpsp.t_wc;
+            }
             initialized_.store(true);
         }
         return true;
     }
+
+    
 
     bool VIOVPSFusion::SimpleInitializePose()
     {   
@@ -265,6 +283,7 @@ namespace svv_fusion{
                                     t, vpsp.timestamp);
                     exit(-1);
                 }
+                printf("tmp_vio and vps poses size is %d %d...\n", tmp_vioposes.size(), tmp_vpsposes.size());
                 tmp_vioposes.push_back_focus(vio_poses_.index(pair.first));
                 tmp_vpsposes.push_back_focus(vps_poses_.index(pair.second));
                 mlocker_.unlock();
@@ -284,6 +303,51 @@ namespace svv_fusion{
         }
     }
 
+    bool SimpleAligned(CircleQue<Posed_t> &vp0, CircleQue<Posed_t> &vp1, Mat4d &T_01)
+    {
+        if(vp0.size() != vp1.size()){
+            printf("aligned error....\n");
+            return false;
+        }
+        // all element is matched
+        T_01 = Mat4d::Identity();
+        ceres::Problem problem;
+        ceres::Solver::Options options;
+        options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+        options.max_num_iterations = 5;
+        ceres::Solver::Summary summary;
+        ceres::LossFunction *loss_function;
+        loss_function = new ceres::HuberLoss(1.0);
+        ceres::LocalParameterization *local_parameteriztion = new ceres::EigenQuaternionParameterization();
+        Quaterniond qvec_01 = Quaterniond::Identity();
+        Vec3d t_01 = Vec3d::Zero();
+        problem.AddParameterBlock(qvec_01.coeffs().data(), 4, local_parameteriztion);
+        problem.AddParameterBlock(t_01.data(), 3);
+        for(int i=0; i<vp0.size(); ++i){
+            auto p0 = vp0.index(i);
+            auto p1 = vp1.index(i);
+
+            ceres::CostFunction* init_function = ChangeCoordinateError::Create(p0.t_wc[0], p0.t_wc[1], p0.t_wc[2], 
+            p0.q_wc.w(), p0.q_wc.x(), p0.q_wc.y(), p0.q_wc.z(), 0.1, 0.01,
+            p1.t_wc[0], p1.t_wc[1], p1.t_wc[2], 
+            p1.q_wc.w(), p1.q_wc.x(), p1.q_wc.y(), p1.q_wc.z(), 0.1, 0.01);
+
+            problem.AddResidualBlock(init_function, loss_function, qvec_01.coeffs().data(), t_01.data());
+        }
+        ceres::Solve(options, &problem, &summary);
+        T_01.block<3,3>(0,0) = qvec_01.toRotationMatrix();
+        T_01.block<3,1>(0,3) = t_01;
+
+        auto p0 = vp0.tail();
+        auto p1 = vp1.tail();
+        auto delta_R = p0.q_wc.toRotationMatrix().transpose() * p1.q_wc.toRotationMatrix();
+        auto delta_t =         
+
+        std::cout<<T_01<<std::endl;
+        exit(-1);
+        return true;
+    }
+
     void VIOVPSFusion::Optical(CircleQue<Posed_t>& vioposes, CircleQue<Posed_t>& vpsposes, 
                                Posed_t& last_pose, Posed_t& cur_pose){
         // a another element should also be opti ed !!! T_wvps_wvio
@@ -301,11 +365,15 @@ namespace svv_fusion{
         // fix front 4/5 opt the tail 1/5 pose
         // always change the T_wvps_wvio
         int deppart = std::max(min_opt_size_, vioposes.size())*4.0/5.0;
-        if(vioposes.size() <= deppart){
+        if(vioposes.size() < deppart){
             // when pose not enough ... 
             return;
         }
-        printf("matches size and depart position is %d %d.\n", vioposes.size(), deppart);
+        else if(vioposes.size() == deppart){
+            // cal the init coodinate change
+            SimpleAligned(vpsposes, vioposes, T_wvps_wvio_);
+            return;
+        }
         
         Quaterniond qvec_wvps_wvio (T_wvps_wvio_.block<3,3>(0,0));
         Vec3d t_wvps_wvio = T_wvps_wvio_.block<3,1>(0,3);
@@ -355,32 +423,49 @@ namespace svv_fusion{
             }
         }
 
+        // RelativeRT error + Rt error ?
         auto &viop0 = vioposes.index(0);
         auto &vpsp0 = vpsposes.index(0);
+        ceres::CostFunction* vps_function = RTError::Create(vpsp0.t_wc[0], vpsp0.t_wc[1], vpsp0.t_wc[2], 
+                                                        vpsp0.q_wc.w(), vpsp0.q_wc.x(), vpsp0.q_wc.y(), vpsp0.q_wc.z(), 0.1, 0.01);
+        problem.AddResidualBlock(vps_function, loss_function, 
+                            viop0.q_wc.coeffs().data(), viop0.t_wc.data());
         for(int i=1; i<vioposes.size(); ++i){
             auto& viop1 = vioposes.index(i);
             auto& vpsp1 = vpsposes.index(i);
 
+            Mat4d wTi = Mat4d::Identity();
+            Mat4d wTj = Mat4d::Identity();
+
+            wTi.block<3, 3>(0, 0) = viop0.q_wc.toRotationMatrix();
+            wTi.block<3, 1>(0, 3) = viop0.t_wc;
+
+            wTj.block<3, 3>(0, 0) = viop1.q_wc.toRotationMatrix();
+            wTj.block<3, 1>(0, 3) = viop1.t_wc;
+
+            Mat4d iTj = wTi.inverse() * wTj;
+            Quaterniond iQj(iTj.block<3, 3>(0, 0));
+            Vec3d iPj = iTj.block<3, 1>(0, 3);
+
+            ceres::CostFunction *vio_function = RelativeRTError::Create(iPj.x(), iPj.y(), iPj.z(),
+                                                                        iQj.w(), iQj.x(), iQj.y(), iQj.z(), 0.1, 0.01);
+            problem.AddResidualBlock(vio_function, NULL, vpsp0.q_wc.coeffs().data(), vpsp0.t_wc.data(),
+                                     vpsp1.q_wc.coeffs().data(), vpsp1.t_wc.data());
+
+
+            ceres::CostFunction* vps_function = RTError::Create(vpsp1.t_wc[0], vpsp1.t_wc[1], vpsp1.t_wc[2], 
+                                                        vpsp1.q_wc.w(), vpsp1.q_wc.x(), vpsp1.q_wc.y(), vpsp1.q_wc.z(), 0.1, 0.01);
+            problem.AddResidualBlock(vps_function, loss_function, 
+                            viop1.q_wc.coeffs().data(), viop1.t_wc.data());                                                        
             viop0 = viop1;
             vpsp0 = vpsp1;
         }
         ceres::Solve(options, &problem, &summary);
-        
         T_wvps_wvio_.block<3,3>(0,0) = qvec_wvps_wvio.toRotationMatrix();
-        T_wvps_wvio_.block<3,1>(0,3) = t_wvps_wvio;
-
-        opt_vio_poses_.push_back_focus(vioposes.tail());
+        T_wvps_wvio_.block<3,1>(0,3) = t_wvps_wvio; 
     }
 
-    void VIOVPSFusion::GetWVPS_VIOPose(Posed_t& pose) {
-        pose.timestamp = cur_timestamp_;
-        pose.t_wc = t_wvps_vio_;
-        pose.q_wc = q_wvps_vio_;
-    }
-    
-    void VIOVPSFusion::GetOptVIOPose(Posed_t& pose){
-        pose = opt_vio_poses_.tail();
-    }
+
     int VIOVPSFusion::findTimeStampInVPS(int start_index, double timestamp){
         if(start_index>=0 && start_index < vps_poses_.size()){
             for(size_t i=start_index; i<vps_poses_.size(); ++i){

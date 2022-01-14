@@ -379,16 +379,7 @@ namespace vins_fusion{
         T_wvps_wvio_ = T_wvps_vio * T_wvio_vio.inverse();
         // std::cout<<"the T_wvps_wvio change method is\n"<<T_wvps_wvio_<<std::endl;
     }
-
-    void VIOVPSFusion2::GetWVPS_VIOPose(Posed_t& pose) {
-        pose.timestamp = cur_timestamp_;
-        pose.t_wc = t_wvps_vio_;
-        pose.q_wc = q_wvps_vio_;
-    }
     
-    void VIOVPSFusion2::GetOptVIOPose(Posed_t& pose){
-        pose = opt_vio_poses_.tail();
-    }
     int VIOVPSFusion2::findTimeStampInVPS(int start_index, double timestamp){
 
         if(start_index>=0 && start_index < vps_poses_.size()){

@@ -49,8 +49,6 @@ namespace vins_fusion{
 
             void RunOptical();
             void Optical();
-            void GetWVPS_VIOPose(Posed_t& pose);
-            void GetOptVIOPose(Posed_t& pose);
             bool IsInitialization(){
                 return initialized_.load();
             }
