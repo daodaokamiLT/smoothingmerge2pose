@@ -48,7 +48,7 @@ int main(int argc, char* argv[]){
     std::vector<svv_fusion::Posed_t> fusion_results;
     svv_fusion::VIOVPSFusion vvfusion(50, 150, 50);
     int vioposition = 0, vpsposition = 0;
-    std::ofstream foutC("/home/lut/Desktop/evo/optvinsvio.csv", std::ios::app);
+    std::ofstream foutC("/home/lut/Desktop/evo/optvio.csv", std::ios::app);
     foutC.setf(std::ios::fixed, std::ios::floatfield);
     svv_fusion::Posed_t lastoptpose;
     while(true){

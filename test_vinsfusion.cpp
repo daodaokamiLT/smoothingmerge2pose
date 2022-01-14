@@ -48,8 +48,8 @@ int main(int argc, char* argv[]){
     svv_fusion::AlignedVector<svv_fusion::Posed_t> fusion_results;
     svv_fusion::vins_fusion::VIOVPSFusion2 vvfusion(50, 150, 50);
     int vioposition = 0, vpsposition = 0;
-    std::ofstream foutC("/home/lut/Desktop/evo/optvinsvio.csv", std::ios::app);
-    svv_fusion::Posed_t lastoptpose;
+    // std::ofstream foutC("/home/lut/Desktop/evo/optvinsvio.csv", std::ios::app);
+    // svv_fusion::Posed_t lastoptpose;
     while(true){
         if(vioposes.size() <= vioposition || vpsposes.size() <= vpsposition){
             break;
@@ -84,28 +84,27 @@ int main(int argc, char* argv[]){
         usleep(10000);
         svv_fusion::Posed_t optpose;
         
-        vvfusion.GetOptVIOPose(optpose);
-        if(lastoptpose.valued()){
-            if(lastoptpose.timestamp == optpose.timestamp){
-                continue;
-            }
+        // vvfusion.GetOptVIOPose(optpose);
+        // if(lastoptpose.valued()){
+        //     if(lastoptpose.timestamp == optpose.timestamp){
+        //         continue;
+        //     }
             
-        }
-        
-        if(optpose.valued()){
-            foutC.precision(0);
-            foutC << optpose.timestamp << ",";
-            foutC.precision(5);
-            foutC << optpose.t_wc[0] << ","
-                  << optpose.t_wc[1] << ","
-                  << optpose.t_wc[2] << ","
-                  << optpose.q_wc.w() << ","
-                  << optpose.q_wc.x() << ","
-                  << optpose.q_wc.y() << ","
-                  << optpose.q_wc.z() << std::endl;
-        }
-        lastoptpose = optpose;
+        // }
+        // if(optpose.valued()){
+        //     foutC.precision(0);
+        //     foutC << optpose.timestamp << ",";
+        //     foutC.precision(5);
+        //     foutC << optpose.t_wc[0] << ","
+        //           << optpose.t_wc[1] << ","
+        //           << optpose.t_wc[2] << ","
+        //           << optpose.q_wc.w() << ","
+        //           << optpose.q_wc.x() << ","
+        //           << optpose.q_wc.y() << ","
+        //           << optpose.q_wc.z() << std::endl;
+        // }
+        // lastoptpose = optpose;
     }
-    foutC.close();
+    // foutC.close();
     return 0;
 }

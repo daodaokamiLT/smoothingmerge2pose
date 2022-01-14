@@ -253,6 +253,18 @@ namespace svv_fusion{
                 mlocker_.lock();
                 std::pair<size_t, size_t> pair = viovps_matches_.tail();
                 printf("pair.first second %d %d...\n", pair.first, pair.second);
+                Posed_t viop = vio_poses_.index(pair.first);
+                Posed_t vpsp = vps_poses_.index(pair.second);
+                printf("match size %d, the match element ? ... %d %d %lf.\n",viovps_matches_.size(), 
+                                    pair.first, pair.second, viop.timestamp);
+                double t = viop.timestamp;
+                if(t != vpsp.timestamp){
+                    printf("error, match size %d, the match element didn't matched... %d %d|| %lf %lf\n", 
+                                    viovps_matches_.size(), 
+                                    pair.first, pair.second, 
+                                    t, vpsp.timestamp);
+                    exit(-1);
+                }
                 tmp_vioposes.push_back_focus(vio_poses_.index(pair.first));
                 tmp_vpsposes.push_back_focus(vps_poses_.index(pair.second));
                 mlocker_.unlock();
@@ -345,33 +357,9 @@ namespace svv_fusion{
 
         auto &viop0 = vioposes.index(0);
         auto &vpsp0 = vpsposes.index(0);
-        ceres::CostFunction* cviovps_function0 = RelativeCRTError2::Create(vpsp0.t_wc[0], vpsp0.t_wc[1], vpsp0.t_wc[2], 
-                            vpsp0.q_wc.w(), vpsp0.q_wc.x(), vpsp0.q_wc.y(), vpsp0.q_wc.z(), 
-                            0.1, 0.01,
-                            viop0.t_wc[0], viop0.t_wc[1], viop0.t_wc[2], 
-                            viop0.q_wc.w(), viop0.q_wc.x(), viop0.q_wc.y(), viop0.q_wc.z(), 
-                            0.1, 0.01);
-        problem.AddResidualBlock(cviovps_function0, loss_function, qvec_wvps_wvio.coeffs().data(), t_wvps_wvio.data());
-
         for(int i=1; i<vioposes.size(); ++i){
             auto& viop1 = vioposes.index(i);
             auto& vpsp1 = vpsposes.index(i);
-
-            ceres::CostFunction* cviovps_function1 = RelativeCRTError2::Create(vpsp1.t_wc[0], vpsp1.t_wc[1], vpsp1.t_wc[2], 
-                            vpsp1.q_wc.w(), vpsp1.q_wc.x(), vpsp1.q_wc.y(), vpsp1.q_wc.z(), 
-                            0.1, 0.01,
-                            viop1.t_wc[0], viop1.t_wc[1], viop1.t_wc[2], 
-                            viop1.q_wc.w(), viop1.q_wc.x(), viop1.q_wc.y(), viop1.q_wc.z(), 
-                            0.1, 0.01);
-            problem.AddResidualBlock(cviovps_function1, loss_function, qvec_wvps_wvio.coeffs().data(), t_wvps_wvio.data());
-
-            Posed_t deltavps01;
-            deltaPosed(vpsp0, vpsp1, deltavps01);
-            ceres::CostFunction* viovps_function = RelativeRTError::Create(deltavps01.t_wc[0], deltavps01.t_wc[1], deltavps01.t_wc[2],
-                                                        deltavps01.q_wc.w(), deltavps01.q_wc.x(), deltavps01.q_wc.y(), deltavps01.q_wc.z(),
-                                                        0.1, 0.01);
-            problem.AddResidualBlock(viovps_function, NULL, viop0.q_wc.coeffs().data(), viop0.t_wc.data(), 
-                                viop1.q_wc.coeffs().data(), viop1.t_wc.data());
 
             viop0 = viop1;
             vpsp0 = vpsp1;

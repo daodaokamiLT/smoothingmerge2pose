@@ -1,6 +1,7 @@
 #include "vinsfusion.h"
 #include "vinsfactors.h"
-
+#include <fstream>
+#include <unistd.h>
 namespace svv_fusion{
 namespace vins_fusion{
     VIOVPSFusion2::VIOVPSFusion2(const int& vioquesize, const int& vpsquesize, 
@@ -15,6 +16,27 @@ namespace vins_fusion{
 
     VIOVPSFusion2::~VIOVPSFusion2(){
         opt_thread_.detach();
+        std::ofstream foutC("/home/lut/Desktop/evo/optvinsvio.csv", std::ios::app);
+        foutC.setf(std::ios::fixed, std::ios::floatfield);
+        if(foutC.is_open()){
+            for (auto iter : wvps_vioposeMap_)
+            {
+                if (iter.second.valued())
+                {
+                    foutC.precision(0);
+                    foutC << iter.first << ",";
+                    foutC.precision(5);
+                    foutC << iter.second.t_wc[0] << ","
+                          << iter.second.t_wc[1] << ","
+                          << iter.second.t_wc[2] << ","
+                          << iter.second.q_wc.w() << ","
+                          << iter.second.q_wc.x() << ","
+                          << iter.second.q_wc.y() << ","
+                          << iter.second.q_wc.z() << std::endl;
+                }
+            }
+            foutC.close();
+        }
     }
     // 可能出现两次一样的match同时push 进入队列中！！！ // 这种find matches 方法太差了！！！！
     void VIOVPSFusion2::PushVIOPose(Posed_t &pose) {
@@ -250,6 +272,7 @@ namespace vins_fusion{
     void VIOVPSFusion2::RunOptical() {
         while(true){
             if(newvps_match_.load()){
+                newvps_match_.store(false);
                 auto m = viovps_matches_.tail();
                 Posed_t viop = vio_poses_.index(m.first);
                 Posed_t vpsp = vps_poses_.index(m.second);
