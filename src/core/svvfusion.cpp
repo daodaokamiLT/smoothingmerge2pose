@@ -331,9 +331,10 @@ namespace svv_fusion{
             p0.q_wc.w(), p0.q_wc.x(), p0.q_wc.y(), p0.q_wc.z(), 0.1, 0.01,
             p1.t_wc[0], p1.t_wc[1], p1.t_wc[2], 
             p1.q_wc.w(), p1.q_wc.x(), p1.q_wc.y(), p1.q_wc.z(), 0.1, 0.01);
-
+            
             problem.AddResidualBlock(init_function, loss_function, qvec_01.coeffs().data(), t_01.data());
         }
+
         ceres::Solve(options, &problem, &summary);
         T_01.block<3,3>(0,0) = qvec_01.toRotationMatrix();
         T_01.block<3,1>(0,3) = t_01;
@@ -341,9 +342,10 @@ namespace svv_fusion{
         auto p0 = vp0.tail();
         auto p1 = vp1.tail();
         auto delta_R = p0.q_wc.toRotationMatrix().transpose() * p1.q_wc.toRotationMatrix();
-        auto delta_t =         
+        auto delta_t = p0.q_wc.toRotationMatrix().transpose() * (p1.t_wc - p0.t_wc);
 
         std::cout<<T_01<<std::endl;
+        std::cout<<delta_R <<"\n"<<delta_t<<std::endl;
         exit(-1);
         return true;
     }
