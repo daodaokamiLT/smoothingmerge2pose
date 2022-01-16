@@ -129,8 +129,6 @@ namespace svv_fusion{
         return true;
     }
 
-    
-
     bool VIOVPSFusion::SimpleInitializePose()
     {   
         // need at least 4 point and hasn't in one line
@@ -309,6 +307,13 @@ namespace svv_fusion{
             printf("aligned error....\n");
             return false;
         }
+        // move 16cm, cannot make initialized?
+        // 这应该是能够计算出deltapose的？？？
+        auto deltavp0 = vp0.tail().t_wc - vp0.front().t_wc;
+        std::cout<<"vps deltapose "<< deltavp0.transpose() <<" "<<deltavp0.norm()<<std::endl; 
+
+        auto deltavp1 = vp1.tail().t_wc - vp1.front().t_wc;
+        std::cout<<"vio deltapose "<< deltavp1.transpose() <<" "<<deltavp1.norm()<<std::endl; 
         // all element is matched
         T_01 = Mat4d::Identity();
         ceres::Problem problem;
@@ -321,21 +326,27 @@ namespace svv_fusion{
         ceres::LocalParameterization *local_parameteriztion = new ceres::EigenQuaternionParameterization();
         Quaterniond qvec_01 = Quaterniond::Identity();
         Vec3d t_01 = Vec3d::Zero();
+        qvec_01 = vp0.index(0).q_wc.inverse() * vp1.index(0).q_wc;
+        t_01 = vp0.index(0).q_wc.inverse() * (vp1.index(0).t_wc - vp0.index(0).t_wc);
         problem.AddParameterBlock(qvec_01.coeffs().data(), 4, local_parameteriztion);
         problem.AddParameterBlock(t_01.data(), 3);
+        std::cout<<"vio vps pose size is ..."<<vp0.size()<<std::endl;
         for(int i=0; i<vp0.size(); ++i){
             auto p0 = vp0.index(i);
             auto p1 = vp1.index(i);
 
+            std::cout<<i<<"viop: "<<p0<<std::endl;
+            std::cout<<i<<"vpsp: "<<p1<<std::endl;
             ceres::CostFunction* init_function = ChangeCoordinateError::Create(p0.t_wc[0], p0.t_wc[1], p0.t_wc[2], 
-            p0.q_wc.w(), p0.q_wc.x(), p0.q_wc.y(), p0.q_wc.z(), 0.1, 0.01,
+            p0.q_wc.w(), p0.q_wc.x(), p0.q_wc.y(), p0.q_wc.z(), 1, 0.1,
             p1.t_wc[0], p1.t_wc[1], p1.t_wc[2], 
-            p1.q_wc.w(), p1.q_wc.x(), p1.q_wc.y(), p1.q_wc.z(), 0.1, 0.01);
-            
-            problem.AddResidualBlock(init_function, loss_function, qvec_01.coeffs().data(), t_01.data());
+            p1.q_wc.w(), p1.q_wc.x(), p1.q_wc.y(), p1.q_wc.z(), 1, 0.1);
+
+            problem.AddResidualBlock(init_function, NULL, qvec_01.coeffs().data(), t_01.data());
         }
 
         ceres::Solve(options, &problem, &summary);
+        std::cout<<summary.BriefReport()<<std::endl;
         T_01.block<3,3>(0,0) = qvec_01.toRotationMatrix();
         T_01.block<3,1>(0,3) = t_01;
 
@@ -346,6 +357,13 @@ namespace svv_fusion{
 
         std::cout<<T_01<<std::endl;
         std::cout<<delta_R <<"\n"<<delta_t<<std::endl;
+
+        p0 = vp0.front();
+        p1 = vp1.front();
+        auto delta_R1 = p0.q_wc.toRotationMatrix().transpose() * p1.q_wc.toRotationMatrix();
+        auto delta_t1 = p0.q_wc.toRotationMatrix().transpose() * (p1.t_wc - p0.t_wc);
+        std::cout<<delta_R1 <<"\n"<<delta_t1<<std::endl;
+
         exit(-1);
         return true;
     }
@@ -386,6 +404,7 @@ namespace svv_fusion{
         for(int i=0; i<deppart; ++i){
             auto& viop = vioposes.index(i);
             auto& vpsp = vioposes.index(i);
+
             if(!viop.t_wc.hasNaN() && !vpsp.t_wc.hasNaN()){
                 problem.AddParameterBlock(viop.q_wc.coeffs().data(), 4, local_parameteriztion);
                 problem.AddParameterBlock(viop.t_wc.data(), 3);
