@@ -7,7 +7,7 @@ namespace vins_fusion{
     VIOVPSFusion2::VIOVPSFusion2(const int& vioquesize, const int& vpsquesize, 
                     const int& matchsize):min_opt_size_(matchsize/2), 
                     vio_poses_(vioquesize), vps_poses_(vpsquesize), 
-                    opt_vio_poses_(vioquesize), viovps_matches_(matchsize){\
+                    opt_vio_poses_(vioquesize), viovps_matches_(matchsize){
         matches_index_ = 0;
         initialized_.store(false);
         newvps_match_.store(false);
@@ -379,7 +379,7 @@ namespace vins_fusion{
         T_wvps_wvio_ = T_wvps_vio * T_wvio_vio.inverse();
         // std::cout<<"the T_wvps_wvio change method is\n"<<T_wvps_wvio_<<std::endl;
     }
-    
+
     int VIOVPSFusion2::findTimeStampInVPS(int start_index, double timestamp){
 
         if(start_index>=0 && start_index < vps_poses_.size()){

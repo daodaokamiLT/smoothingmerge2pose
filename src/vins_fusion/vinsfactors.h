@@ -82,6 +82,7 @@ struct RTError
 	double t_x, t_y, t_z, q_w, q_x, q_y, q_z, t_var, q_var;
 
 };
+// 这里应该也有error 才对！！！？？？
 struct RelativeRTError
 {
 	RelativeRTError(double t_x, double t_y, double t_z, 

@@ -319,52 +319,144 @@ namespace svv_fusion{
         ceres::Problem problem;
         ceres::Solver::Options options;
         options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
-        options.max_num_iterations = 5;
+        options.max_num_iterations = 20;
         ceres::Solver::Summary summary;
         ceres::LossFunction *loss_function;
         loss_function = new ceres::HuberLoss(1.0);
         ceres::LocalParameterization *local_parameteriztion = new ceres::EigenQuaternionParameterization();
-        Quaterniond qvec_01 = Quaterniond::Identity();
-        Vec3d t_01 = Vec3d::Zero();
-        qvec_01 = vp0.index(0).q_wc.inverse() * vp1.index(0).q_wc;
-        t_01 = vp0.index(0).q_wc.inverse() * (vp1.index(0).t_wc - vp0.index(0).t_wc);
-        problem.AddParameterBlock(qvec_01.coeffs().data(), 4, local_parameteriztion);
-        problem.AddParameterBlock(t_01.data(), 3);
-        std::cout<<"vio vps pose size is ..."<<vp0.size()<<std::endl;
+        Quaterniond qvec_w1w0 = Quaterniond::Identity();
+        Vec3d t_w1w0 = Vec3d::Zero();
+        // x y z w
+        // w x y z
+        Vec4d qvecw1w0 = Vec4d::Zero();
+        qvecw1w0[0] = 1;
+        problem.AddParameterBlock(qvecw1w0.data(), 4, local_parameteriztion);
+        problem.AddParameterBlock(t_w1w0.data(), 3);
+        // std::ofstream writer0("/home/lut/Desktop/SmoothingMergePose/path0.csv", std::ios::app);
+        // writer0.setf(std::ios::fixed, std::ios::floatfield);
+
+        // std::ofstream writer1("/home/lut/Desktop/SmoothingMergePose/path1.csv", std::ios::app);
+        // writer1.setf(std::ios::fixed, std::ios::floatfield);
+
         for(int i=0; i<vp0.size(); ++i){
             auto p0 = vp0.index(i);
             auto p1 = vp1.index(i);
+            // write these data into the files, than use evo draw these path....
+            // std::cout<<i<<"viop: "<<p0<<std::endl;
+            // std::cout<<i<<"vpsp: "<<p1<<std::endl;
+            // {
+            //     if(writer0.is_open()){
+            //         writer0.precision(0);
+            //         writer0 << vp0.index(i).timestamp << ",";
+            //         writer0.precision(5);
+            //         writer0 << vp0.index(i).t_wc[0] << ","
+            //               << vp0.index(i).t_wc[1] << ","
+            //               << vp0.index(i).t_wc[2] << ","
+            //               << vp0.index(i).q_wc.w() << ","
+            //               << vp0.index(i).q_wc.x() << ","
+            //               << vp0.index(i).q_wc.y() << ","
+            //               << vp0.index(i).q_wc.z() << std::endl;
+            //     }
 
-            std::cout<<i<<"viop: "<<p0<<std::endl;
-            std::cout<<i<<"vpsp: "<<p1<<std::endl;
-            ceres::CostFunction* init_function = ChangeCoordinateError::Create(p0.t_wc[0], p0.t_wc[1], p0.t_wc[2], 
-            p0.q_wc.w(), p0.q_wc.x(), p0.q_wc.y(), p0.q_wc.z(), 1, 0.1,
-            p1.t_wc[0], p1.t_wc[1], p1.t_wc[2], 
-            p1.q_wc.w(), p1.q_wc.x(), p1.q_wc.y(), p1.q_wc.z(), 1, 0.1);
+            //     if(writer1.is_open()){
+            //         writer1.precision(0);
+            //         writer1 << vp0.index(i).timestamp << ",";
+            //         writer1.precision(5);
+            //         writer1 << vp1.index(i).t_wc[0] << ","
+            //               << vp1.index(i).t_wc[1] << ","
+            //               << vp1.index(i).t_wc[2] << ","
+            //               << vp1.index(i).q_wc.w() << ","
+            //               << vp1.index(i).q_wc.x() << ","
+            //               << vp1.index(i).q_wc.y() << ","
+            //               << vp1.index(i).q_wc.z() << std::endl;
+            //     }
+            // }
+            // ceres::CostFunction* init_function = ChangeCoordinateError::Create(
+            //     p0.t_wc[0], p0.t_wc[1], p0.t_wc[2], 
+            //     p0.q_wc.w(), p0.q_wc.x(), p0.q_wc.y(), p0.q_wc.z(), 0.1, 0.01,
+            // p1.t_wc[0], p1.t_wc[1], p1.t_wc[2], 
+            // p1.q_wc.w(), p1.q_wc.x(), p1.q_wc.y(), p1.q_wc.z(), 0.1, 0.01);
+            ceres::CostFunction* init_function = ChangeCoordinateTError::Create(
+                p0.t_wc[0], p0.t_wc[1], p0.t_wc[2], 0.1,
+                p1.t_wc[0], p1.t_wc[1], p1.t_wc[2], 0.1
+            );
+            problem.AddResidualBlock(init_function, loss_function, qvecw1w0.data(), t_w1w0.data());
 
-            problem.AddResidualBlock(init_function, NULL, qvec_01.coeffs().data(), t_01.data());
         }
-
+        // if(writer0.is_open()){
+        //     writer0.close();
+        // }
+        // if(writer1.is_open()){
+        //     writer1.close();
+        // }
         ceres::Solve(options, &problem, &summary);
-        std::cout<<summary.BriefReport()<<std::endl;
-        T_01.block<3,3>(0,0) = qvec_01.toRotationMatrix();
-        T_01.block<3,1>(0,3) = t_01;
+        // std::cout<<summary.BriefReport()<<std::endl;
+        
+        qvec_w1w0.w() = qvecw1w0[0];
+        qvec_w1w0.x() = qvecw1w0[1];
+        qvec_w1w0.y() = qvecw1w0[2];
+        qvec_w1w0.z() = qvecw1w0[3];
+        // the result is T_w1 = T01 * T_w0 
+        // change to Real T_01 should 
+        T_01.block<3,3>(0,0) = qvec_w1w0.inverse().toRotationMatrix();
+        T_01.block<3,1>(0,3) = -qvec_w1w0.inverse().toRotationMatrix()*t_w1w0;
+        std::cout<<"aligned T_01:\n"<<T_01<<std::endl;
 
-        auto p0 = vp0.tail();
-        auto p1 = vp1.tail();
-        auto delta_R = p0.q_wc.toRotationMatrix().transpose() * p1.q_wc.toRotationMatrix();
-        auto delta_t = p0.q_wc.toRotationMatrix().transpose() * (p1.t_wc - p0.t_wc);
+        // std::ofstream writer2("/home/lut/Desktop/SmoothingMergePose/path2.csv", std::ios::app);
+        // writer2.setf(std::ios::fixed, std::ios::floatfield);
 
-        std::cout<<T_01<<std::endl;
-        std::cout<<delta_R <<"\n"<<delta_t<<std::endl;
+        // std::ofstream writer3("/home/lut/Desktop/SmoothingMergePose/path3.csv", std::ios::app);
+        // writer3.setf(std::ios::fixed, std::ios::floatfield);
+        
+        std::cout<<qvec_w1w0.toRotationMatrix()<<std::endl;
+        std::cout<<t_w1w0<<std::endl;
+        // Vec3d eror_t = Vec3d::Zero();
+        // for(int i=0; i<vp0.size(); ++i){
+        //     auto p0 = vp0.index(i);
+        //     auto p1 = vp1.index(i);
+        //     {
+        //         if(writer2.is_open()){
+        //             writer2.precision(0);
+        //             writer2 << p0.timestamp << ",";
+        //             writer2.precision(5);
+        //             Quaterniond qvec_w1w0_real;
+        //             auto twi = qvec_w1w0.toRotationMatrix() * p0.t_wc + t_w1w0;
+        //             auto qwi = qvec_w1w0 * p0.q_wc;
+        //             writer2 << twi[0] << ","
+        //                   << twi[1] << ","
+        //                   << twi[2] << ","
+        //                   << qwi.w() << ","
+        //                   << qwi.x() << ","
+        //                   << qwi.y() << ","
+        //                   << qwi.z() << std::endl;
 
-        p0 = vp0.front();
-        p1 = vp1.front();
-        auto delta_R1 = p0.q_wc.toRotationMatrix().transpose() * p1.q_wc.toRotationMatrix();
-        auto delta_t1 = p0.q_wc.toRotationMatrix().transpose() * (p1.t_wc - p0.t_wc);
-        std::cout<<delta_R1 <<"\n"<<delta_t1<<std::endl;
+        //             eror_t += twi - p1.t_wc;
+        //         }
 
-        exit(-1);
+        //         if(writer3.is_open()){
+        //             writer3.precision(0);
+        //             writer3 << p1.timestamp << ",";
+        //             writer3.precision(5);
+        //             writer3 << p1.t_wc[0] << ","
+        //                   << p1.t_wc[1] << ","
+        //                   << p1.t_wc[2] << ","
+        //                   << p1.q_wc.w() << ","
+        //                   << p1.q_wc.x() << ","
+        //                   << p1.q_wc.y() << ","
+        //                   << p1.q_wc.z() << std::endl;
+        //         }
+
+            
+        //     }
+
+        // }
+        // std::cout<<"error_t "<<eror_t.transpose()<<": "<<eror_t.norm()<<std::endl;
+        // if(writer2.is_open()){
+        //     writer2.close();
+        // }
+        // if(writer3.is_open()){
+        //     writer3.close();
+        // }
         return true;
     }
 
@@ -377,7 +469,7 @@ namespace svv_fusion{
         ceres::Problem problem;
         ceres::Solver::Options options;
         options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
-        options.max_num_iterations = 5;
+        options.max_num_iterations = 20;
         ceres::Solver::Summary summary;
         ceres::LossFunction *loss_function;
         loss_function = new ceres::HuberLoss(1.0);
@@ -434,6 +526,8 @@ namespace svv_fusion{
 
                 problem.AddParameterBlock(vpsp.q_wc.coeffs().data(), 4, local_parameteriztion);
                 problem.AddParameterBlock(vpsp.t_wc.data(), 3);
+
+
             }
             else{
                 printf("error after depart data error...\n");
