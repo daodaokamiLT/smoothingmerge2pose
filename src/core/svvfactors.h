@@ -24,7 +24,6 @@ void QuaternionInverse(const T q[4], T q_inverse[4])
 	q_inverse[3] = -q[3];
 };
 
-
 struct TError
 {
 	TError(double t_x, double t_y, double t_z, double var)
@@ -50,8 +49,6 @@ struct TError
 	double t_x, t_y, t_z, var;
 
 };
-
-
 
 struct RTError
 {
@@ -173,7 +170,6 @@ struct ChangeCoordinateError{
 	double t1_x, t1_y, t1_z, q1_w, q1_x, q1_y, q1_z, t1_var, q1_var;
 };
 
-
 struct ChangeCoordinateTError{
 	ChangeCoordinateTError(
 		const double t0_x, const double t0_y,const double t0_z,
@@ -287,4 +283,59 @@ struct RelativeRTError
 	double t_var, q_var;
 };
 
+struct ChangeCoordinateRTError{
+	ChangeCoordinateRTError(const double t_x, const double t_y, const double t_z, 
+				const double q_w, const double q_x, const double q_y, const double q_z, 
+				const double t_var, const double q_var):
+				t_x(t_x), t_y(t_y), t_z(t_z), t_var(t_var), 
+				q_w(q_w), q_x(q_x), q_y(q_y), q_z(q_z), q_var(q_var){}
+
+	template <typename T>
+	bool operator()(const T* const q_wi_wj, const T* t_wi_wj, 
+					const T* q_wj, const T* t_wj, T* residuals) const
+	{
+		T q_wi[4];
+		q_wi[0] = T(q_w);
+		q_wi[1] = T(q_x);
+		q_wi[2] = T(q_y);
+		q_wi[3] = T(q_z);
+
+		T t_wi[3];
+		t_wi[0] = T(t_x);
+		t_wi[1] = T(t_y);
+		t_wi[2] = T(t_z);
+
+		T q_wij[4];
+		ceres::QuaternionProduct(q_wi_wj, q_wj, q_wij);
+		T t_wij[3];
+		ceres::QuaternionRotatePoint(q_wi_wj, t_wj, t_wij);
+		t_wij[0] += t_wi_wj[0];
+		t_wij[1] += t_wi_wj[1] ;
+		t_wij[2] += t_wi_wj[2] ;
+		residuals[0] = (t_wij[0] - t_wi[0])/t_var;
+		residuals[1] = (t_wij[1] - t_wi[1])/t_var;
+		residuals[2] = (t_wij[2] - t_wi[2])/t_var;
+		T q_wij_inv[4], delta_ij[4];
+		QuaternionInverse(q_wij, q_wij_inv);
+		ceres::QuaternionProduct(q_wij_inv, q_wi, delta_ij);
+		residuals[3] = T(2) * delta_ij[1] / q_var;
+		residuals[4] = T(2) * delta_ij[2] / q_var;
+		residuals[5] = T(2) * delta_ij[3] / q_var;
+
+		return true;
+	}
+
+
+	static ceres::CostFunction* Create(const double t_x, const double t_y,const double t_z,
+			const double q_w,const  double q_x,const double q_y,const double q_z,
+			const double t_var,const double q_var) 
+	{
+	  return (new ceres::AutoDiffCostFunction<
+	          ChangeCoordinateRTError, 6, 4, 3, 4, 3>(
+	          	new ChangeCoordinateRTError(t_x, t_y, t_z, q_w, q_x, q_y, q_z, t_var, q_var)));
+	}
+	
+	double t_x, t_y, t_z, t_var;
+	double q_w, q_x, q_y, q_z, q_var;
+};
 }

@@ -7,7 +7,7 @@ namespace svv_fusion{
     VIOVPSFusion::VIOVPSFusion(const int& vioquesize, const int& vpsquesize, 
                     const int& matchsize):min_opt_size_(matchsize/2), 
                     vio_poses_(vioquesize), vps_poses_(vpsquesize), 
-                    opt_vio_poses_(vioquesize), viovps_matches_(matchsize){
+                    opt_vio_poses_(10000), viovps_matches_(matchsize){
         matches_index_ = 0;
         newvps_match_.store(false);
         initialized_.store(false);
@@ -17,19 +17,37 @@ namespace svv_fusion{
     VIOVPSFusion::~VIOVPSFusion(){
         opt_thread_.detach();
         
-        std::ofstream foutC("/home/lut/Desktop/evo/optvio.csv", std::ios::app);
-        // foutC.setf(std::ios::fixed, std::ios::floatfield);
-        //     foutC.precision(0);
-        //     foutC << optpose.timestamp << ",";
-        //     foutC.precision(5);
-        //     foutC << optpose.t_wc[0] << ","
-        //           << optpose.t_wc[1] << ","
-        //           << optpose.t_wc[2] << ","
-        //           << optpose.q_wc.w() << ","
-        //           << optpose.q_wc.x() << ","
-        //           << optpose.q_wc.y() << ","
-        //           << optpose.q_wc.z() << std::endl;
+        std::ofstream foutC("/home/lut/Desktop/evo/wvps_optvio.csv", std::ios::app);
+        std::ofstream foutD("/home/lut/Desktop/evo/wvps_optvio1.csv", std::ios::app);
+        foutC.setf(std::ios::fixed, std::ios::floatfield);
+        foutD.setf(std::ios::fixed, std::ios::floatfield);
+        for(auto optpose : global_poses_){
+            foutC.precision(0);
+            foutC << optpose.second.timestamp << ",";
+            foutC.precision(5);
+            foutC << optpose.second.t_wc[0] << ","
+                  << optpose.second.t_wc[1] << ","
+                  << optpose.second.t_wc[2] << ","
+                  << optpose.second.q_wc.w() << ","
+                  << optpose.second.q_wc.x() << ","
+                  << optpose.second.q_wc.y() << ","
+                  << optpose.second.q_wc.z() << std::endl;
+        }
         foutC.close();
+        for(int i=0; i< opt_vio_poses_.size(); ++i){
+            auto& optpose = opt_vio_poses_.index(i);
+            foutD.precision(0);
+            foutD << optpose.timestamp << ",";
+            foutD.precision(5);
+            foutD << optpose.t_wc[0] << ","
+                  << optpose.t_wc[1] << ","
+                  << optpose.t_wc[2] << ","
+                  << optpose.q_wc.w() << ","
+                  << optpose.q_wc.x() << ","
+                  << optpose.q_wc.y() << ","
+                  << optpose.q_wc.z() << std::endl;
+        }
+        foutD.close();
     }
     // 可能出现两次一样的match同时push 进入队列中！！！
     // 可能出现两次一样的match同时push 进入队列中！！！ // 这种find matches 方法太差了！！！！
@@ -323,7 +341,7 @@ namespace svv_fusion{
         ceres::Solver::Summary summary;
         ceres::LossFunction *loss_function;
         loss_function = new ceres::HuberLoss(1.0);
-        ceres::LocalParameterization *local_parameteriztion = new ceres::EigenQuaternionParameterization();
+        ceres::LocalParameterization *local_parameteriztion = new ceres::QuaternionParameterization();
         Quaterniond qvec_w1w0 = Quaterniond::Identity();
         Vec3d t_w1w0 = Vec3d::Zero();
         // x y z w
@@ -462,6 +480,28 @@ namespace svv_fusion{
 
     void VIOVPSFusion::Optical(CircleQue<Posed_t>& vioposes, CircleQue<Posed_t>& vpsposes, 
                                Posed_t& last_pose, Posed_t& cur_pose){
+
+        AlignedVector<std::pair<double, Vec4d>> tmp_vp0, tmp_vp1;
+        tmp_vp0.reserve(vioposes.size());
+        tmp_vp1.reserve(vioposes.size());
+        for(int i=0; i<vioposes.size(); ++i){
+            auto p0 = vioposes.index(i);
+            auto p1 = vpsposes.index(i);
+            
+            Vec4d tmpp0, tmpp1;
+            tmpp0[0] = p0.q_wc.w();
+            tmpp0[1] = p0.q_wc.x();
+            tmpp0[2] = p0.q_wc.y();
+            tmpp0[3] = p0.q_wc.z();
+            
+            tmpp1[0] = p1.q_wc.w();
+            tmpp1[1] = p1.q_wc.x();
+            tmpp1[2] = p1.q_wc.y();
+            tmpp1[3] = p1.q_wc.z();
+
+            tmp_vp0.push_back(std::make_pair(p0.timestamp, tmpp0));
+            tmp_vp1.push_back(std::make_pair(p1.timestamp, tmpp1));
+        }
         // a another element should also be opti ed !!! T_wvps_wvio
         // the last_pose always the tail()-1, cur_pose is the tail pose
         // 优化的变量实际是 delta_pose
@@ -473,7 +513,7 @@ namespace svv_fusion{
         ceres::Solver::Summary summary;
         ceres::LossFunction *loss_function;
         loss_function = new ceres::HuberLoss(1.0);
-        ceres::LocalParameterization* local_parameteriztion = new ceres::EigenQuaternionParameterization();
+        ceres::LocalParameterization* local_parameteriztion = new ceres::QuaternionParameterization();
         // fix front 4/5 opt the tail 1/5 pose
         // always change the T_wvps_wvio
         int deppart = std::max(min_opt_size_, vioposes.size())*4.0/5.0;
@@ -490,22 +530,29 @@ namespace svv_fusion{
         Quaterniond qvec_wvps_wvio (T_wvps_wvio_.block<3,3>(0,0));
         Vec3d t_wvps_wvio = T_wvps_wvio_.block<3,1>(0,3);
 
-        problem.AddParameterBlock(qvec_wvps_wvio.coeffs().data(), 4, local_parameteriztion);
+        Vec4d vqvec_wvps_wvio = Vec4d::Identity();
+        vqvec_wvps_wvio[0] = qvec_wvps_wvio.w();
+        vqvec_wvps_wvio[1] = qvec_wvps_wvio.x();
+        vqvec_wvps_wvio[2] = qvec_wvps_wvio.y();
+        vqvec_wvps_wvio[3] = qvec_wvps_wvio.z();
+        
+        problem.AddParameterBlock(vqvec_wvps_wvio.data(), 4, local_parameteriztion);
         problem.AddParameterBlock(t_wvps_wvio.data(), 3);
-
         for(int i=0; i<deppart; ++i){
             auto& viop = vioposes.index(i);
             auto& vpsp = vioposes.index(i);
 
+            auto& tmp_viop = tmp_vp0[i];
+            auto& tmp_vpsp = tmp_vp1[i];
             if(!viop.t_wc.hasNaN() && !vpsp.t_wc.hasNaN()){
-                problem.AddParameterBlock(viop.q_wc.coeffs().data(), 4, local_parameteriztion);
+                problem.AddParameterBlock(tmp_viop.second.data(), 4, local_parameteriztion);
                 problem.AddParameterBlock(viop.t_wc.data(), 3);
 
-                problem.SetParameterBlockConstant(viop.q_wc.coeffs().data());
+                problem.SetParameterBlockConstant(tmp_viop.second.data());
                 problem.SetParameterBlockConstant(viop.t_wc.data());
                 
                 // vps result 是可以优化一下的！！！
-                problem.AddParameterBlock(vpsp.q_wc.coeffs().data(), 4, local_parameteriztion);
+                problem.AddParameterBlock(tmp_vpsp.second.data(), 4, local_parameteriztion);
                 problem.AddParameterBlock(vpsp.t_wc.data(), 3);
             }
             else{
@@ -519,15 +566,15 @@ namespace svv_fusion{
         for(int i=deppart; i<vioposes.size(); ++i){
             auto& viop = vioposes.index(i);
             auto& vpsp = vpsposes.index(i);
-    
+
+            auto& tmp_viop = tmp_vp0[i];
+            auto& tmp_vpsp = tmp_vp1[i];
             if(!viop.t_wc.hasNaN() && !vpsp.t_wc.hasNaN()){
-                problem.AddParameterBlock(viop.q_wc.coeffs().data(), 4, local_parameteriztion);
+                problem.AddParameterBlock(tmp_viop.second.data(), 4, local_parameteriztion);
                 problem.AddParameterBlock(viop.t_wc.data(), 3);
 
-                problem.AddParameterBlock(vpsp.q_wc.coeffs().data(), 4, local_parameteriztion);
+                problem.AddParameterBlock(tmp_vpsp.second.data(), 4, local_parameteriztion);
                 problem.AddParameterBlock(vpsp.t_wc.data(), 3);
-
-
             }
             else{
                 printf("error after depart data error...\n");
@@ -538,46 +585,90 @@ namespace svv_fusion{
             }
         }
 
-        // RelativeRT error + Rt error ?
-        auto &viop0 = vioposes.index(0);
-        auto &vpsp0 = vpsposes.index(0);
-        ceres::CostFunction* vps_function = RTError::Create(vpsp0.t_wc[0], vpsp0.t_wc[1], vpsp0.t_wc[2], 
-                                                        vpsp0.q_wc.w(), vpsp0.q_wc.x(), vpsp0.q_wc.y(), vpsp0.q_wc.z(), 0.1, 0.01);
+        ceres::CostFunction *vps_function = 
+            ChangeCoordinateRTError::Create(vpsposes.index(0).t_wc[0], 
+                vpsposes.index(0).t_wc[1], 
+                vpsposes.index(0).t_wc[2],
+                vpsposes.index(0).q_wc.w(), 
+                vpsposes.index(0).q_wc.x(), 
+                vpsposes.index(0).q_wc.y(), 
+                vpsposes.index(0).q_wc.z(), 
+                0.1, 0.01);
+
         problem.AddResidualBlock(vps_function, loss_function, 
-                            viop0.q_wc.coeffs().data(), viop0.t_wc.data());
+                            vqvec_wvps_wvio.data(), 
+                            t_wvps_wvio.data(), 
+                            tmp_vp0[0].second.data(), 
+                            vioposes.index(0).t_wc.data());
+
         for(int i=1; i<vioposes.size(); ++i){
+            auto& viop0 = vioposes.index(i-1);
+            auto& vpsp0 = vpsposes.index(i-1);
             auto& viop1 = vioposes.index(i);
             auto& vpsp1 = vpsposes.index(i);
+
+            auto& tmp_viop0 = tmp_vp0[i-1];
+            auto& tmp_vpsp0 = tmp_vp1[i-1];
+            auto& tmp_viop1 = tmp_vp0[i];
+            auto& tmp_vpsp1 = tmp_vp1[i];
 
             Mat4d wTi = Mat4d::Identity();
             Mat4d wTj = Mat4d::Identity();
 
-            wTi.block<3, 3>(0, 0) = viop0.q_wc.toRotationMatrix();
-            wTi.block<3, 1>(0, 3) = viop0.t_wc;
+            wTi.block<3, 3>(0, 0) = vpsp0.q_wc.toRotationMatrix();
+            wTi.block<3, 1>(0, 3) = vpsp0.t_wc;
 
-            wTj.block<3, 3>(0, 0) = viop1.q_wc.toRotationMatrix();
-            wTj.block<3, 1>(0, 3) = viop1.t_wc;
+            wTj.block<3, 3>(0, 0) = vpsp1.q_wc.toRotationMatrix();
+            wTj.block<3, 1>(0, 3) = vpsp1.t_wc;
 
             Mat4d iTj = wTi.inverse() * wTj;
             Quaterniond iQj(iTj.block<3, 3>(0, 0));
             Vec3d iPj = iTj.block<3, 1>(0, 3);
 
-            ceres::CostFunction *vio_function = RelativeRTError::Create(iPj.x(), iPj.y(), iPj.z(),
+            ceres::CostFunction *vio_function = RelativeRTError::Create(iPj[0], iPj[1], iPj[2],
                                                                         iQj.w(), iQj.x(), iQj.y(), iQj.z(), 0.1, 0.01);
-            problem.AddResidualBlock(vio_function, NULL, vpsp0.q_wc.coeffs().data(), vpsp0.t_wc.data(),
-                                     vpsp1.q_wc.coeffs().data(), vpsp1.t_wc.data());
+            problem.AddResidualBlock(vio_function, NULL, tmp_viop0.second.data(), viop0.t_wc.data(),
+                                     tmp_viop1.second.data(), viop1.t_wc.data());
 
+            // T_wvps_wvio, so change the element
+            // add ChangeCoordinateRTError
+            // create use vio pose, so 
+            ceres::CostFunction *vps_function = ChangeCoordinateRTError::Create(vpsp1.t_wc[0], vpsp1.t_wc[1], vpsp1.t_wc[2],
+                                    vpsp1.q_wc.w(), vpsp1.q_wc.x(), vpsp1.q_wc.y(), vpsp1.q_wc.z(), 0.1, 0.01);
 
-            ceres::CostFunction* vps_function = RTError::Create(vpsp1.t_wc[0], vpsp1.t_wc[1], vpsp1.t_wc[2], 
-                                                        vpsp1.q_wc.w(), vpsp1.q_wc.x(), vpsp1.q_wc.y(), vpsp1.q_wc.z(), 0.1, 0.01);
-            problem.AddResidualBlock(vps_function, loss_function, 
-                            viop1.q_wc.coeffs().data(), viop1.t_wc.data());                                                        
-            viop0 = viop1;
-            vpsp0 = vpsp1;
+            problem.AddResidualBlock(vps_function, loss_function, vqvec_wvps_wvio.data(), t_wvps_wvio.data(), 
+                            tmp_viop1.second.data(), viop1.t_wc.data());
         }
         ceres::Solve(options, &problem, &summary);
+        qvec_wvps_wvio.w() = vqvec_wvps_wvio[0];
+        qvec_wvps_wvio.x() = vqvec_wvps_wvio[1];
+        qvec_wvps_wvio.y() = vqvec_wvps_wvio[2];
+        qvec_wvps_wvio.z() = vqvec_wvps_wvio[3];
+
         T_wvps_wvio_.block<3,3>(0,0) = qvec_wvps_wvio.toRotationMatrix();
         T_wvps_wvio_.block<3,1>(0,3) = t_wvps_wvio; 
+
+        // update the real pose 
+        for(int i=0; i<vioposes.size(); ++i){
+            auto& viop = vioposes.index(i);
+            auto& vpsp = vpsposes.index(i);
+
+            // Posed_t P_wvps_vio;
+            // ChangeCoordinate(T_wvps_wvio_, viop, P_wvps_vio);        
+            global_poses_[viop.timestamp] = viop;
+
+            viop.q_wc.w() = tmp_vp0[i].second[0];
+            viop.q_wc.x() = tmp_vp0[i].second[1];
+            viop.q_wc.y() = tmp_vp0[i].second[2];
+            viop.q_wc.z() = tmp_vp0[i].second[3];
+
+            vpsp.q_wc.w() = tmp_vp1[i].second[0];
+            vpsp.q_wc.x() = tmp_vp1[i].second[1];
+            vpsp.q_wc.y() = tmp_vp1[i].second[2];
+            vpsp.q_wc.z() = tmp_vp1[i].second[3];
+        }
+        // 最好还是加一个map的结构去更新这些pose，并全局存储下来，否则每次都是一次算法就get
+        opt_vio_poses_.push_back_focus(vioposes.tail());        
     }
 
 

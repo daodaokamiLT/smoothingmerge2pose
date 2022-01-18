@@ -14,7 +14,8 @@ namespace svv_fusion{
             CircleQue<Posed_t> vio_poses_;
             CircleQue<Posed_t> vps_poses_;
             CircleQue<Posed_t> opt_vio_poses_;
-
+            AlignedMap<double, Posed_t> global_poses_;
+            
             int findTimeStampInVPS(int start_index, double timestamp);
             int findTimeStampInVIO(int start_index, double timestamp);
             std::atomic_bool newvps_match_;

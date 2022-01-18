@@ -46,7 +46,7 @@ int main(int argc, char* argv[]){
     readposecsv("/home/lut/Desktop/evo/vps.csv", vpsposes);
 
     std::vector<svv_fusion::Posed_t> fusion_results;
-    svv_fusion::VIOVPSFusion vvfusion(50, 150, 50);
+    svv_fusion::VIOVPSFusion vvfusion(100, 200, 50);
     int vioposition = 0, vpsposition = 0;
     while(true){
         if(vioposes.size() <= vioposition || vpsposes.size() <= vpsposition){
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]){
             vvfusion.PushVPSPose(vpsposes[vpsposition]);
             ++vpsposition;
         }
-        usleep(10000);
+        usleep(30000);
     }
     return 0;
 }
